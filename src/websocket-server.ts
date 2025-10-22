@@ -71,14 +71,15 @@ export class DashboardServer extends EventEmitter {
       });
 
       ws.on('error', (err) => {
-        logger.error({ err, clientId }, 'WebSocket client error');
+        logger.error({ err, clientId }, 'WebSocket error');
       });
 
-      ws.send(JSON.stringify({
-        type: 'connected',
-        clientId,
-        timestamp: Date.now(),
-      }));
+      // Send initial metrics
+      this.sendMetrics(client);
+    });
+
+    this.wss.on('error', (err) => {
+      logger.error({ err }, 'WebSocket Server error');
     });
   }
 
@@ -86,74 +87,60 @@ export class DashboardServer extends EventEmitter {
     const client = this.clients.get(clientId);
     if (!client) return;
 
-    switch (message.type) {
-      case 'subscribe':
-        if (message.channel) {
-          client.subscriptions.add(message.channel);
-          logger.debug({ clientId, channel: message.channel }, 'Client subscribed to channel');
-        }
-        break;
-      case 'unsubscribe':
-        if (message.channel) {
-          client.subscriptions.delete(message.channel);
-          logger.debug({ clientId, channel: message.channel }, 'Client unsubscribed from channel');
-        }
-        break;
-      case 'getHistory':
-        client.ws.send(JSON.stringify({
-          type: 'history',
-          data: this.metricsHistory,
-          timestamp: Date.now(),
-        }));
-        break;
+    if (message.type === 'subscribe') {
+      const topics = Array.isArray(message.topics) ? message.topics : [message.topics];
+      topics.forEach((topic: string) => client.subscriptions.add(topic));
+      logger.debug({ clientId, topics }, 'Client subscribed to topics');
+    } else if (message.type === 'unsubscribe') {
+      const topics = Array.isArray(message.topics) ? message.topics : [message.topics];
+      topics.forEach((topic: string) => client.subscriptions.delete(topic));
+      logger.debug({ clientId, topics }, 'Client unsubscribed from topics');
+    } else if (message.type === 'request_history') {
+      this.sendHistory(client);
     }
+  }
+
+  private generateClientId(): string {
+    return `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
   private startBroadcast(): void {
     this.broadcastInterval = setInterval(() => {
       this.broadcastMetrics();
-    }, 5000);
-    logger.info('Dashboard metrics broadcast started');
+    }, 5000); // Broadcast every 5 seconds
   }
 
-  private stopBroadcast(): void {
-    if (this.broadcastInterval) {
-      clearInterval(this.broadcastInterval);
-      this.broadcastInterval = null;
-      logger.info('Dashboard metrics broadcast stopped');
-    }
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      this.clients.forEach((client) => {
+        if (client.ws.readyState === WebSocket.OPEN) {
+          client.ws.ping();
+        }
+      });
+    }, 30000); // Heartbeat every 30 seconds
   }
 
   private async broadcastMetrics(): Promise<void> {
-    if (this.isPending || this.clients.size === 0) return;
-    
-    try {
-      this.isPending = true;
-      const analytics = new AnalyticsEngine();
-      const metricsString = await analytics.getMetrics();
-      const timestamp = Date.now();
+    if (this.isPending) return;
 
-      this.metricsHistory.push({ timestamp, metrics: metricsString });
+    this.isPending = true;
+    try {
+      const metrics = await AnalyticsEngine.getInstance().getSnapshot();
+      const snapshot: MetricsSnapshot = {
+        timestamp: Date.now(),
+        metrics,
+      };
+
+      this.metricsHistory.push(snapshot);
       if (this.metricsHistory.length > this.maxHistorySize) {
         this.metricsHistory.shift();
       }
 
-      const payload = JSON.stringify({
-        type: 'metrics',
-        timestamp,
-        data: metricsString,
-      });
-
-      for (const client of this.clients.values()) {
-        if (client.subscriptions.has('realtime') && client.ws.readyState === WebSocket.OPEN) {
-          try {
-            client.ws.send(payload);
-            client.bufferedBytes = (client.ws as any).bufferedAmount ?? 0;
-          } catch (err) {
-            logger.error({ err, clientId: client.id }, 'Failed to send metrics to client');
-          }
+      this.clients.forEach((client) => {
+        if (client.subscriptions.has('metrics') || client.subscriptions.size === 0) {
+          this.sendMetrics(client, snapshot);
         }
-      }
+      });
     } catch (err) {
       logger.error({ err }, 'Failed to broadcast metrics');
     } finally {
@@ -161,38 +148,61 @@ export class DashboardServer extends EventEmitter {
     }
   }
 
-  private startHeartbeat(): void {
-    this.heartbeatInterval = setInterval(() => {
-      const now = Date.now();
-      for (const client of this.clients.values()) {
-        if (client.ws.readyState === WebSocket.OPEN) {
-          try {
-            const heartbeat = {
-              type: 'heartbeat',
-              timestamp: now,
-              bufferedBytes: client.bufferedBytes,
-            };
-            client.ws.send(JSON.stringify(heartbeat));
-          } catch (err) {
-            logger.error({ err, clientId: client.id }, 'Failed to send heartbeat');
-          }
-        }
-      }
-    }, 30000);
-    logger.info('Heartbeat started');
+  private sendMetrics(client: DashboardClient, snapshot?: MetricsSnapshot): void {
+    if (client.ws.readyState !== WebSocket.OPEN) return;
+
+    const data = snapshot || (this.metricsHistory.length > 0 ? this.metricsHistory[this.metricsHistory.length - 1] : null);
+    if (!data) return;
+
+    try {
+      const message = JSON.stringify({
+        type: 'metrics',
+        data,
+      });
+
+      client.ws.send(message);
+    } catch (err) {
+      logger.error({ err, clientId: client.id }, 'Failed to send metrics');
+    }
   }
 
-  private generateClientId(): string {
-    return `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  private sendHistory(client: DashboardClient): void {
+    if (client.ws.readyState !== WebSocket.OPEN) return;
+
+    try {
+      const message = JSON.stringify({
+        type: 'history',
+        data: this.metricsHistory,
+      });
+
+      client.ws.send(message);
+    } catch (err) {
+      logger.error({ err, clientId: client.id }, 'Failed to send history');
+    }
   }
 
   public close(): void {
-    this.stopBroadcast();
+    if (this.broadcastInterval) {
+      clearInterval(this.broadcastInterval);
+      this.broadcastInterval = null;
+    }
+
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+
+    this.clients.forEach((client) => {
+      client.ws.close();
+    });
+
     this.wss.close();
     logger.info('Dashboard WebSocket Server closed');
   }
+
+  public getConnectedClients(): number {
+    return this.clients.size;
+  }
 }
+
+export default DashboardServer;
