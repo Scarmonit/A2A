@@ -5,29 +5,29 @@
 # NOTE: CODEOWNERS controls review requests and is not a permission system.
 
 # Default owners for everything in the repo
-* @Scarmonit @copilot
+* @Scarmonit @copilot @jules
 
 # GitHub Actions workflows
-/.github/ @Scarmonit @copilot
+/.github/ @Scarmonit @copilot @jules
 
 # Core source code
-/src/ @Scarmonit @copilot
+/src/ @Scarmonit @copilot @jules
 
 # Configuration files
-*.json @Scarmonit @copilot
-*.yml @Scarmonit @copilot
-*.yaml @Scarmonit @copilot
-*.toml @Scarmonit @copilot
+*.json @Scarmonit @copilot @jules
+*.yml @Scarmonit @copilot @jules
+*.yaml @Scarmonit @copilot @jules
+*.toml @Scarmonit @copilot @jules
 
 # Documentation
-*.md @Scarmonit @copilot
+*.md @Scarmonit @copilot @jules
 
 # Deployment configurations
-/deploy*.* @Scarmonit @copilot
-/Dockerfile @Scarmonit @copilot
-/docker-compose.yml @Scarmonit @copilot
+/deploy*.* @Scarmonit @copilot @jules
+/Dockerfile @Scarmonit @copilot @jules
+/docker-compose.yml @Scarmonit @copilot @jules
 
 # Scripts
-/scripts/ @Scarmonit @copilot
-*.sh @Scarmonit @copilot
-*.ps1 @Scarmonit @copilot
+/scripts/ @Scarmonit @copilot @jules
+*.sh @Scarmonit @copilot @jules
+*.ps1 @Scarmonit @copilot @jules
