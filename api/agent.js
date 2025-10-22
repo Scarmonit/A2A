@@ -5,7 +5,7 @@
 
 const RAILWAY_BACKEND = process.env.BACKEND_BASE_URL || 'https://ac532d3b-0a00-4589-b880-cb0c4cf971a4.up.railway.app';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -60,4 +60,4 @@ module.exports = async (req, res) => {
       message: error.message
     });
   }
-};
+}
