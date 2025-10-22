@@ -1,15 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 300,
-        "memory": 1024
-      }
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 300,
+      "memory": 1024
     }
-  ],
+  },
   "routes": [
     {
       "src": "/healthz",
@@ -17,7 +13,7 @@
     },
     {
       "src": "/metrics",
-      "dest": "/api/index.js" 
+      "dest": "/api/index.js"
     },
     {
       "src": "/demo(/?)(.*)",
@@ -33,12 +29,6 @@
     }
   ],
   "env": {
-    "NODE_ENV": "production",
-    "MAX_CONCURRENCY": "5",
-    "MAX_QUEUE_SIZE": "2000",
-    "ENABLE_STREAMING": "false",
-    "LOG_LEVEL": "info",
-    "METRICS_PORT": "0",
-    "VERCEL_DEPLOYMENT": "true"
+    "NODE_ENV": "production"
   }
 }
