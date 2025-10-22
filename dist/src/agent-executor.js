@@ -1,6 +1,8 @@
 import { agentRegistry } from './agents.js';
 import { practicalToolRegistry } from './practical-tools.js';
 import { advancedToolRegistry } from './advanced-tools.js';
+import { analyticsEngine } from './analytics-engine.js';
+import { mcpMonitor } from './mcp-monitor.js';
 import pino from 'pino';
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', base: { service: 'agent-executor' } });
 export class AgentExecutor {
@@ -38,21 +40,44 @@ export class AgentExecutor {
             logger.info({ agentId, capability }, 'Executing agent capability');
             // Execute based on agent type and capability
             const result = await this.executeCapability(agent, capability, input, context, toolsUsed, changes);
+            const executionTime = Date.now() - startTime;
+            // Track agent execution in analytics
+            analyticsEngine.trackAgentExecution({
+                agentId,
+                requestId: context.requestId,
+                capability,
+                success: true,
+                executionTime,
+                toolsUsed,
+                userId: undefined
+            });
             return {
                 success: true,
                 result,
                 toolsUsed,
-                executionTime: Date.now() - startTime,
+                executionTime,
                 changes
             };
         }
         catch (error) {
+            const executionTime = Date.now() - startTime;
             logger.error({ error, agentId, capability }, 'Agent execution failed');
+            // Track failed execution in analytics
+            analyticsEngine.trackAgentExecution({
+                agentId,
+                requestId: context.requestId,
+                capability,
+                success: false,
+                executionTime,
+                toolsUsed,
+                errorType: error instanceof Error ? error.name : 'UnknownError',
+                userId: undefined
+            });
             return {
                 success: false,
                 error: error instanceof Error ? error.message : String(error),
                 toolsUsed,
-                executionTime: Date.now() - startTime,
+                executionTime,
                 changes
             };
         }
@@ -156,7 +181,16 @@ export class AgentExecutor {
     }
     async executeTool(toolName, params, context, toolsUsed, changes) {
         toolsUsed.push(toolName);
+        const startTime = Date.now();
         const result = await practicalToolRegistry.execute(toolName, params, context);
+        const duration = Date.now() - startTime;
+        // Track tool call in MCP monitor
+        mcpMonitor.trackToolCall({
+            toolName,
+            agentId: context.agentId,
+            duration,
+            success: result.success
+        });
         // Track changes based on tool result
         if (result.success && result.result) {
             if (result.result.filesCreated) {
@@ -173,7 +207,16 @@ export class AgentExecutor {
     }
     async executeAdvancedTool(toolName, params, context, toolsUsed, changes) {
         toolsUsed.push(toolName);
+        const startTime = Date.now();
         const result = await advancedToolRegistry.execute(toolName, params, context);
+        const duration = Date.now() - startTime;
+        // Track tool call in MCP monitor
+        mcpMonitor.trackToolCall({
+            toolName,
+            agentId: context.agentId,
+            duration,
+            success: result.success
+        });
         // Track changes based on tool result
         if (result.success && result.result) {
             if (result.result.filesCreated) {

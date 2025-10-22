@@ -154,6 +154,51 @@ export class AnalyticsEngine {
     });
   }
   
+  // Track tool call with token usage
+  trackToolCall(params: {
+    toolName: string;
+    agentId: string;
+    duration: number;
+    success: boolean;
+    inputTokens?: number;
+    outputTokens?: number;
+  }): void {
+    this.track({
+      eventType: 'tool_call',
+      agentId: params.agentId,
+      data: {
+        toolName: params.toolName,
+        duration: params.duration,
+        success: params.success,
+        inputTokens: params.inputTokens,
+        outputTokens: params.outputTokens
+      },
+      tags: {
+        tool: params.toolName,
+        status: params.success ? 'success' : 'error'
+      }
+    });
+  }
+  
+  // Track resource access
+  trackResourceAccess(params: {
+    resourceType: 'memory' | 'cpu' | 'network' | 'mcp_server';
+    agentId: string;
+    usage: number;
+  }): void {
+    this.track({
+      eventType: 'resource_access',
+      agentId: params.agentId,
+      data: {
+        resourceType: params.resourceType,
+        usage: params.usage
+      },
+      tags: {
+        resource: params.resourceType
+      }
+    });
+  }
+  
   // Query analytics data
   query(query: AnalyticsQuery): {
     data: any[];
