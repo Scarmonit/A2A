@@ -1,322 +1,212 @@
-# Copilot Instructions for A2A MCP Server
-
-## Project Overview
-
-A2A (Agent-to-Agent) is a Model Context Protocol (MCP) server implementation in TypeScript that enables AI agents to communicate and collaborate through a standardized protocol. The server provides:
-
-- **Agent Management**: Deploy, discover, and manage AI agents with various capabilities
-- **Streaming Support**: High-performance WebSocket streaming for real-time agent interactions
-- **Tool Registry**: Extensible tool system for agents to interact with external systems
-- **Session Management**: Track and manage agent sessions with idempotency support
-- **Metrics & Monitoring**: Built-in Prometheus metrics and health checks
-- **Multi-Platform Deployment**: Support for Railway, Render, Fly.io, and Vercel
-
-**Target Users**: Developers building AI agent systems, multi-agent orchestration platforms, and MCP-compliant applications.
-
-## Tech Stack & Tools
-
-**Core Technologies**:
-- **Language**: TypeScript 5.6+
-- **Runtime**: Node.js 20+
-- **MCP SDK**: @modelcontextprotocol/sdk ^1.5.0
-- **WebSocket**: ws ^8.18.0 for streaming
-- **Logging**: pino ^9.3.2
-- **Monitoring**: prom-client ^15.1.3
-- **Validation**: zod ^3.23.8
-
-**Build & Development**:
-- **TypeScript Compiler**: tsc
-- **Dev Server**: ts-node-dev for hot reload
-- **Package Manager**: npm
-
-**Deployment Platforms**:
-- Railway, Render, Fly.io, Vercel
-- Docker support with multi-stage builds
-
-## Coding Guidelines & Conventions
-
-**Code Style**:
-- Use TypeScript strict mode (configured in tsconfig.json)
-- Prefer functional programming patterns where appropriate
-- Use async/await for asynchronous operations
-- Export types and interfaces for public APIs
-
-**Naming Conventions**:
-- **Files**: kebab-case (e.g., `agent-executor.ts`, `streaming.ts`)
-- **Classes**: PascalCase (e.g., `AgentRegistry`, `StreamHub`)
-- **Functions/Variables**: camelCase (e.g., `ensureRequestId`, `agentExecutor`)
-- **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_CONCURRENCY`, `ENABLE_STREAMING`)
-- **Types/Interfaces**: PascalCase (e.g., `AgentDescriptor`, `RequestRecord`)
-
-**Error Handling**:
-- Always provide meaningful error messages
-- Use try-catch blocks for async operations
-- Log errors with appropriate context using pino logger
-- Return structured error responses in MCP format
-
-**Comments**:
-- Add JSDoc comments for public APIs and complex functions
-- Explain "why" not "what" in inline comments
-- Keep comments up-to-date with code changes
-
-**Dependencies**:
-- Minimize external dependencies
-- Prefer well-maintained packages with active communities
-- Check for security vulnerabilities before adding new dependencies
-
-## Project Structure
-
-```
-/home/runner/work/A2A/A2A/
-├── src/                          # TypeScript source files
-│   ├── index.ts                  # Main MCP server entry point
-│   ├── agents.ts                 # Core agent registry and management
-│   ├── enhanced-agents.ts        # Enhanced agent types and ecosystem
-│   ├── advanced-agents.ts        # Advanced agent capabilities
-│   ├── agent-executor.ts         # Agent execution engine
-│   ├── agent-memory.ts           # Memory management for agents
-│   ├── agent-mcp-servers.ts      # MCP server management
-│   ├── tools.ts                  # Core tool registry
-│   ├── practical-tools.ts        # Practical tool implementations
-│   ├── advanced-tools.ts         # Advanced tool capabilities
-│   ├── streaming.ts              # WebSocket streaming hub
-│   ├── permissions.ts            # Permission management
-│   ├── workflow-orchestrator.ts  # Workflow orchestration
-│   ├── ai-integration.ts         # AI provider integrations
-│   ├── analytics-engine.ts       # Analytics and metrics
-│   └── agent-types.ts            # Type definitions
-├── dist/                         # Compiled JavaScript output
-├── api/                          # API handlers (for serverless)
-├── scripts/                      # Utility scripts
-├── .github/                      # GitHub workflows and configs
-│   ├── workflows/deploy.yml      # CI/CD deployment pipeline
-│   └── copilot-instructions.md   # This file
-├── package.json                  # Project dependencies and scripts
-├── tsconfig.json                 # TypeScript configuration
-├── Dockerfile                    # Docker container definition
-└── docker-compose.yml            # Multi-container setup
-```
-
-**Key Components**:
-- **Agent Registry** (`agents.ts`): Central registry for agent discovery and filtering
-- **Stream Hub** (`streaming.ts`): WebSocket-based streaming for real-time updates
-- **Agent Executor** (`agent-executor.ts`): Executes agent capabilities with concurrency control
-- **Tool Registry** (`tools.ts`, `practical-tools.ts`, `advanced-tools.ts`): Extensible tool system
-
-## Testing & Validation Strategy
-
-**Build & Test Commands**:
-```bash
-npm run build              # Compile TypeScript to JavaScript
-npm run dev               # Run dev server with hot reload
-npm start                 # Run production server
-npm run agent:continuous  # Run with increased memory for large agent ecosystems
-```
-
-**Testing Approach**:
-- The project includes test files for various scenarios:
-  - `test-agent-ecosystem.js` - Test agent ecosystem functionality
-  - `test-real-agents.js` - Test real agent interactions
-  - `test-ollama-integration.js` - Test Ollama integration
-  - `simple-agent-test.js` - Basic agent functionality tests
-  - `test-hundreds-agents.js` - Stress test with many agents
-
-**Before Committing**:
-1. Run `npm run build` to ensure TypeScript compiles without errors
-2. Test locally with `npm run dev` and verify MCP tools respond correctly
-3. Check that streaming WebSocket endpoint works (default: `ws://127.0.0.1:8787`)
-4. Verify environment variables are properly documented in `.env.example`
-
-**Testing New Features**:
-- Add new test files following the `test-*.js` naming pattern
-- Test agent registration, invocation, and streaming
-- Verify idempotency keys work correctly
-- Check metrics endpoint if monitoring features are affected
-
-## Troubleshooting & Common Issues
-
-**Build Errors**:
-- **Missing type declarations**: Ensure all `@types/*` packages are installed
-- **Module not found**: Run `npm ci` to clean install dependencies
-- **TypeScript errors**: Check `tsconfig.json` settings match Node.js version
-
-**Runtime Issues**:
-- **Port already in use**: Change `STREAM_PORT` environment variable (default: 8787)
-- **WebSocket connection fails**: Check firewall settings and ensure streaming is enabled (`ENABLE_STREAMING=true`)
-- **Memory issues with large agent ecosystems**: Use `npm run agent:continuous` for increased memory
-- **Agent not found**: Verify agent is properly registered in AgentRegistry
-
-**Deployment Issues**:
-- **Healthcheck failing**: The server uses stdio transport for MCP, ensure platform healthchecks are disabled or point to metrics endpoint
-- **Environment variables**: Ensure all required env vars are set (see `.env.example`)
-- **Build timeout**: Increase build timeout for platforms like Railway/Render
-
-**Common Configuration**:
-- `ENABLE_STREAMING`: Enable/disable WebSocket streaming (default: true)
-- `STREAM_PORT`: WebSocket server port (default: 8787)
-- `MAX_CONCURRENCY`: Maximum concurrent agent executions (default: 50)
-- `MAX_QUEUE_SIZE`: Maximum request queue size (default: 10000)
-- `METRICS_PORT`: Prometheus metrics port (0 to disable)
-
----
-
-# Automation & CI/CD Policy
+# Copilot / Automation Instructions for Full Automation + Full Control
 
 ## Purpose
-Define how Copilot-enabled automation agents and bots should behave in this repository. Copilot has owner-level permissions to create branches, open PRs, run checks, merge, and make any necessary changes to accomplish tasks effectively.
+Define how Copilot-enabled automation agents and bots should behave in this repository, enabling safe, auditable automation that can create branches, open PRs, run checks, and merge when policies are met.
 
-## Scope & Authority
+## Repository Context
 
-**Copilot has full owner-level permissions** to perform any necessary actions:
-- Create, modify, and delete branches as needed
-- Commit code, tests, and docs
-- Open PRs with populated title, body, checklist, linked issues, and labels
-- Trigger CI/CD via commits and PRs
-- Auto-merge PRs when all automated merge rules are satisfied
-- Draft and create releases when semantic-versioning criteria are met
-- Make configuration changes, update dependencies, and modify settings as needed
-- Handle BREAKING CHANGES and major version bumps with proper documentation
+### Project Overview
+**A2A MCP Server** - An Agent-to-Agent Model Context Protocol server built with TypeScript, featuring WebSocket streaming capabilities for real-time agent communication.
 
-## Branch Naming Conventions
+### Technology Stack
+- **Language**: TypeScript 5.6+
+- **Runtime**: Node.js 20+
+- **Package Manager**: npm
+- **Key Dependencies**: 
+  - @modelcontextprotocol/sdk
+  - ws (WebSocket)
+  - pino (logging)
+  - prom-client (metrics)
+  - zod (validation)
 
-- `feature/<short-desc>[-<ticket>]` - New features
-- `fix/<short-desc>[-<ticket>]` - Bug fixes
-- `chore/<short-desc>` - Maintenance tasks
-- `hotfix/<short-desc>` - Critical production fixes
-
-## Commit Message Policy (Conventional Commits)
-
-**Format**: `<type>(<scope>): <short summary>`
-
-**Body**: Optional longer description and rationale
-
-**Footer**: References like `Closes #<issue>`, `BREAKING CHANGE: ...`
-
-**Accepted types**: feat, fix, docs, style, refactor, perf, test, chore, ci
-
-## Automated PR Content
-
-Agents should populate PRs with:
-
-**Title**: Concise summary (optional prefix feat/fix/ci)
-
-**Body**:
-- Summary: What changed and why
-- Implementation notes
-- Test plan
-- Checklist:
-  - [ ] TypeScript compiles without errors
-  - [ ] Tests added/updated for new functionality
-  - [ ] Documentation updated (if applicable)
-  - [ ] Environment variables documented in .env.example (if added)
-  - [ ] Streaming functionality tested (if affected)
-
-**Labels** to apply automatically where applicable:
-- `type:feature`, `type:bug`, `type:chore`, `needs:review`, `needs:tests`, `blocked`
-
-## Auto-merge Rules
-
-Agent may auto-merge a PR when:
-- All required CI checks & status checks pass
-- Required reviews are completed (or no required-review rule is in place)
-- No merge conflicts with base branch
-- No blocker labels (e.g., `blocked`)
-
-When auto-merge is performed, use squash or merge strategy consistent with project policy and include the automation identity in the commit body.
-
-## Security & Safety
-
-- Use best practices for secure coding
-- Document any security-related changes in PR descriptions
-- Run static analysis and dependency vulnerability scanning on PRs when available
-- Keep secrets in environment variables, not hardcoded in source
-
-## Auditability & Traceability
-
-- Reference the originating issue or task in commits and PRs
-- Include agent identity and rationale in commit messages and PR bodies
-- Keep clear documentation of automated changes
-
-## Quality & Developer Experience
-
-- Agents must include unit tests and documentation updates with code changes
-- Prefer small, focused PRs - if large change needed, break into sequenced PRs tied to umbrella issue
-- Provide reproducible test plans in PR bodies
-- Ensure TypeScript types are properly defined for new code
-- Follow existing code patterns and conventions in the repository
-
-## Failure & Escalation
-
-- Investigate and fix build failures and test failures
-- If automated workflows fail repeatedly, open an issue with logs for tracking
-- Use judgment to determine the best approach for resolving issues
-
-## Operational Guidelines
-
-- Include bot name or agent identity in commit/PR metadata for transparency
-- Provide clear commit messages and PR descriptions
-- Use automation efficiently while maintaining code quality
-
-## Enforcement via CI
-
-**Recommended checks** (configure as needed):
-- TypeScript compilation (tsc)
-- Code style (linters)
-- Unit tests
-- Integration tests (when applicable)
-- Dependency vulnerability scanning
-
-Configure branch protection and required checks based on project needs.
-
-## Templates & Examples
-
-**Example commit**:
+### Project Structure
 ```
-feat(agent-executor): add concurrent execution limit
-
-Add configurable concurrency limit to prevent resource exhaustion.
-Includes tests and updates to env variable documentation.
-
-Closes #123
+/
+├── src/                    # TypeScript source files
+│   ├── index.ts           # Main entry point
+│   ├── agents.ts          # Agent implementations
+│   ├── server.ts          # Server configuration
+│   └── types/             # Type definitions
+├── dist/                  # Compiled JavaScript (git-ignored)
+├── scripts/               # Utility scripts
+├── .github/               # GitHub configuration
+│   ├── workflows/         # CI/CD workflows
+│   ├── ISSUE_TEMPLATE/    # Issue templates
+│   └── automation/        # Automation audit logs
+├── tests/                 # Test files (various test-*.js)
+└── docs/                  # Documentation files
 ```
 
-**Example PR body**:
-```
-## Summary
-Add concurrency control to agent executor to prevent resource exhaustion.
+### Build & Test Commands
+- **Install**: `npm install` or `npm ci` (in CI)
+- **Build**: `npm run build` (compiles TypeScript to dist/)
+- **Dev**: `npm run dev` (runs with auto-reload)
+- **Start**: `npm run start` (runs compiled code)
+- **Type Check**: `npx tsc --noEmit`
 
-## Why
-Without limits, hundreds of simultaneous agent invocations could crash the server.
+### Deployment Targets
+- Railway (primary)
+- Render
+- Fly.io
+- Vercel
 
-## What Changed
-- Added MAX_CONCURRENCY environment variable
-- Implemented queue system in agent-executor.ts
-- Added concurrency tests
+### Key Files for Agents
+- `package.json` - Dependencies and scripts
+- `tsconfig.json` - TypeScript configuration
+- `.env.example` - Environment variable template
+- `CHANGELOG.md` - Version history tracking
+- `CODEOWNERS` - Code ownership rules
 
-## Testing
-- Unit tests: npm run build && node dist/test-hundreds-agents.js
-- Manual test: Started server with MAX_CONCURRENCY=5 and verified queuing behavior
+Scope & Authority
+- Allowed automated actions (no extra manual approval unless stated):
+  - Create feature/fix/chore/hotfix branches off the repository default branch.
+  - Commit code, tests, and docs to new branches.
+  - Open PRs with populated title, body, checklist, linked issues, and labels.
+  - Trigger CI/CD via commits and PRs.
+  - Auto-merge PRs when all automated merge rules are satisfied.
+  - Draft and create releases when semantic-versioning criteria are met.
+  - Update documentation files (*.md) in docs/ and root directory.
+  - Add/update tests in test-*.js files.
+  - Modify TypeScript source files in src/ directory.
+  - Update dependencies via package.json (after security review).
+- Disallowed / restricted actions (require explicit human approval):
+  - Direct pushes to protected branches (main/master/etc.) unless branch protection allows it.
+  - Changing repository settings, branch protection, required reviewers, or secrets.
+  - Adding/modifying secrets, credentials, or other sensitive config.
+  - Force-pushes, reverting protected history, destructive infra changes affecting production without explicit maintainer approval.
+  - Auto-merge for BREAKING CHANGES or major-version bumps — these always require a human maintainer approval.
+  - Changes to .github/workflows/ that modify security or deployment workflows.
+  - Modifications to deployment configuration files (fly.toml, vercel.json, railway.json, render.yaml) without review.
 
-## Checklist
-- [x] TypeScript compiles without errors
-- [x] Tests added for concurrency limits
-- [x] Documentation updated in .env.example
-- [x] Streaming functionality verified unaffected
-```
+Branch naming conventions
+- feature/<short-desc>[-<ticket>] - New features and enhancements
+- fix/<short-desc>[-<ticket>] - Bug fixes
+- chore/<short-desc> - Maintenance, refactoring, dependency updates
+- hotfix/<short-desc> - Critical production fixes
+- docs/<short-desc> - Documentation-only changes
 
-## Revision & Governance
+Commit message policy (Conventional Commits)
+- Format: <type>(<scope>): <short summary>
+- Body: optional longer description and rationale
+- Footer: references: Closes #<issue>, BREAKING CHANGE: ...
+- Accepted types: feat, fix, docs, style, refactor, perf, test, chore, ci
 
-- Agents may propose changes to this file via PR
-- Changes to automation policy must be reviewed/approved by repo maintainers
-- Maintain revision history section below
+Automated PR content (agent should populate)
+- Title: concise summary (optional prefix feat/fix/ci)
+- Body:
+  - Summary: what changed and why
+  - Implementation notes
+  - Test plan
+  - Checklist:
+    - [ ] Lint passes
+    - [ ] Unit tests added/updated
+    - [ ] Integration tests (if applicable)
+    - [ ] Changelog updated
+    - [ ] Version bump (if relevant)
+- Labels to apply automatically where applicable:
+  - type:feature, type:bug, type:chore, needs:review, needs:tests, blocked
 
-## Contact & Incident Response
+Auto-merge rules
+- Agent may auto-merge a PR only when ALL conditions are met:
+  - All required CI checks & status checks pass.
+  - Required reviews are completed (or no required-review rule is in place).
+  - No merge conflicts with base branch.
+  - No blocker labels (e.g., blocked).
+  - PR does not include BREAKING CHANGE or major version bump.
+- When auto-merge is performed, use squash or merge strategy consistent with project policy and include the automation identity in the commit body.
 
-- Tag maintainers in CODEOWNERS for questions about automation behavior
-- Follow repository SECURITY.md for incidents and notify maintainers immediately
+Security & Safety
+- Never commit secrets, private keys, tokens, or credentials.
+- If a potential secret is detected in any change, open a draft PR and a security issue; stop any auto-merge until secret rotation and removal are complete.
+- Run static analysis, dependency vulnerability scanning, and secret scanning on every PR.
+- Respect CODEOWNERS and required reviewers; assign code owners automatically when affected.
+- Require signed commits or include agent signature metadata in PR/commit message when possible.
 
-## Revision History
+Auditability & Traceability
+- All automated changes must reference the originating issue or task.
+- Include a short changelog entry in CHANGELOG.md and mention it in the PR body.
+- Agent identity and rationale must be present in commit messages and PR bodies for audit trails.
+- Keep audit logs in repository (e.g., .github/automation/audit.log entries or documented PRs).
 
-- **2025-10-22**: Simplified automation policy to grant Copilot full owner-level permissions, removed restrictive security and approval requirements
-- **2025-10-22**: Enhanced with project overview, tech stack, coding guidelines, structure, testing strategy, and troubleshooting
-- **2025-10-22**: Initial full-automation proposal
+Quality & Developer Experience
+- Agents must include unit tests and documentation updates with code changes.
+- Prefer small, focused PRs. If a large change is necessary, break it into sequenced PRs tied to an umbrella issue.
+- Provide reproducible test plans in PR bodies.
+
+### Code Quality Standards
+- **TypeScript**: Use strict mode, avoid `any` type, prefer interfaces and type guards
+- **Error Handling**: Always handle errors gracefully, use proper logging
+- **Async/Await**: Prefer async/await over callbacks, handle promise rejections
+- **Logging**: Use pino logger for structured logging
+- **Validation**: Use zod for runtime type validation
+- **Testing**: Test server startup, WebSocket connections, and agent invocations
+
+### Testing Guidelines
+- Build must complete successfully: `npm run build`
+- Server must start without errors: `npm run start`
+- Test files follow pattern: `test-*.js`
+- Manual testing required for WebSocket streaming features
+- Test both success and error scenarios
+- Verify agent control tools: list_agents, describe_agent, invoke_agent, etc.
+
+Failure & Escalation
+- If unsure about behavior or a change touches infra/security/permissions, open an issue and assign maintainers rather than proceeding.
+- If automated workflows fail repeatedly, open an issue with logs and disable further retries until a maintainer investigates.
+
+Operational & Token Management
+- Automation should use a named repository bot account if possible and include the bot name in commit/PR metadata.
+- Track and rotate automation tokens according to organization policy.
+- Limit scopes of tokens to least privilege required.
+
+Enforcement via CI
+- Required checks (examples — repository should wire these to workflows):
+  - commit-message-lint (via CI workflow)
+  - code-style (TypeScript compiler check: `npx tsc --noEmit`)
+  - build-check (npm run build must succeed)
+  - unit-test (server startup and basic functionality tests)
+  - integration-test (when applicable)
+  - dependency-scan (npm audit, vulnerability scanning)
+  - secret-scan (TruffleHog, GitHub secret scanning)
+  - codeql-analysis (GitHub CodeQL security analysis)
+  - license-check (dependency license compliance)
+- Configure branch protection to require these checks for merges to protected branches.
+- All workflows are defined in .github/workflows/:
+  - ci.yml - Lint, build, and test
+  - security.yml - Security scanning and analysis
+  - deploy.yml - Deployment to various platforms
+  - auto-merge.yml - Automated PR merging
+  - release.yml - Release automation
+
+Templates & Examples
+- Example commit:
+  feat(auth): add token refresh logic
+
+  Add token refresh logic to handle expired tokens. Includes tests and updates to docs.
+
+  Closes #123
+
+- Example PR body automated population:
+  Summary: One-line summary.
+  Why: Why the change is necessary.
+  What: Key changes.
+  Tests: CI jobs that ran and manual test notes.
+  Checklist:
+  - [ ] Lint passes
+  - [ ] Unit tests added
+  - [ ] Integration tests (if applicable)
+  - [ ] CHANGELOG updated
+
+Revision & Governance
+- Agents may propose changes to this file via PR; changes to the automation policy must be reviewed/approved by repo maintainers.
+- Maintain a revision history section at the bottom of this file.
+
+Contact & Incident Response
+- Tag maintainers in CODEOWNERS for questions about automation behavior.
+- Follow repository SECURITY.md for incidents and notify maintainers immediately.
+
+Revision history
+- 2025-10-22: Initial full-automation proposal.
+- 2025-10-22: Enhanced with repository-specific context, project structure, build commands, and deployment information.
+- 2025-10-22: Added comprehensive GitHub Actions workflows (CI, Security, Auto-merge, Release).
+- 2025-10-22: Created essential repository files (CHANGELOG, CODEOWNERS, SECURITY, CONTRIBUTING, LICENSE).
+- 2025-10-22: Set up issue templates, PR templates, and automation audit logging.
