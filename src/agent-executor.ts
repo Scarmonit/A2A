@@ -1,5 +1,6 @@
 import { AgentDescriptor, agentRegistry } from './agents.js';
 import { practicalToolRegistry } from './practical-tools.js';
+import { advancedToolRegistry } from './advanced-tools.js';
 import { ToolExecutionContext } from './tools.js';
 import pino from 'pino';
 
@@ -153,6 +154,52 @@ export class AgentExecutor {
         // Echo capability for basic testing
         return this.simulateChat(input, context);
 
+      // Advanced capabilities
+      case 'automate_email_campaigns':
+        return await this.executeAdvancedTool('automate_email_campaigns_advanced', {
+          campaign: input.campaign || {},
+          smtp: input.smtp || {},
+          automation: input.automation || {}
+        }, context, toolsUsed, changes);
+
+      case 'manage_database_operations':
+        return await this.executeAdvancedTool('manage_database_operations_advanced', {
+          connection: input.connection || {},
+          operations: input.operations || [],
+          safety: input.safety || {}
+        }, context, toolsUsed, changes);
+
+      case 'orchestrate_cloud_resources':
+        return await this.executeAdvancedTool('orchestrate_cloud_resources_advanced', {
+          providers: input.providers || [],
+          resources: input.resources || [],
+          orchestration: input.orchestration || {}
+        }, context, toolsUsed, changes);
+
+      case 'manage_ml_pipelines':
+        return await this.executeAdvancedTool('manage_ml_pipelines_advanced', {
+          pipeline: input.pipeline || {},
+          data: input.data || {},
+          model: input.model || {},
+          deployment: input.deployment || {}
+        }, context, toolsUsed, changes);
+
+      case 'orchestrate_complex_workflows':
+        return await this.executeAdvancedTool('orchestrate_complex_workflows_advanced', {
+          workflow: input.workflow || {},
+          steps: input.steps || [],
+          triggers: input.triggers || [],
+          errorHandling: input.errorHandling || {}
+        }, context, toolsUsed, changes);
+
+      case 'monitor_real_time_metrics':
+        return await this.executeAdvancedTool('monitor_real_time_metrics_advanced', {
+          targets: input.targets || [],
+          thresholds: input.thresholds || {},
+          alerts: input.alerts || [],
+          dashboard: input.dashboard || {}
+        }, context, toolsUsed, changes);
+
       // Generic capability execution
       default:
         return await this.executeGenericCapability(agent, capability, input, context, toolsUsed, changes);
@@ -179,6 +226,39 @@ export class AgentExecutor {
       }
       if (result.result.networkRequests) {
         changes.networkRequests += result.result.networkRequests;
+      }
+    }
+
+    return result;
+  }
+
+  private async executeAdvancedTool(
+    toolName: string,
+    params: any,
+    context: ToolExecutionContext,
+    toolsUsed: string[],
+    changes: any
+  ): Promise<any> {
+    toolsUsed.push(toolName);
+    const result = await advancedToolRegistry.execute(toolName, params, context);
+    
+    // Track changes based on tool result
+    if (result.success && result.result) {
+      if (result.result.filesCreated) {
+        changes.filesCreated.push(...result.result.filesCreated);
+      }
+      if (result.result.filesModified) {
+        changes.filesModified.push(...result.result.filesModified);
+      }
+      if (result.result.networkRequests) {
+        changes.networkRequests += result.result.networkRequests;
+      }
+      // Track advanced operations
+      if (result.result.resourcesCreated) {
+        changes.resourcesCreated = result.result.resourcesCreated;
+      }
+      if (result.result.deploymentsCreated) {
+        changes.deploymentsCreated = result.result.deploymentsCreated;
       }
     }
 

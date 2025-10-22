@@ -3,7 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { agents, agentRegistry, ensureRequestId } from './agents.js';
 import { practicalToolRegistry } from './practical-tools.js';
 import { createEnhancedAgent, createAgentEcosystem, ENHANCED_AGENT_TYPES } from './enhanced-agents.js';
+import { createAdvancedAgent, createAdvancedEcosystem, ADVANCED_AGENT_TYPES } from './advanced-agents.js';
 import { agentExecutor } from './agent-executor.js';
+import { advancedToolRegistry } from './advanced-tools.js';
 import { permissionManager } from './permissions.js';
 import { agentMCPManager } from './agent-mcp-servers.js';
 import { StreamHub } from './streaming.js';
@@ -176,7 +178,7 @@ const server = new Server({
                 properties: {
                     action: {
                         type: 'string',
-                        enum: ['list_agents', 'describe_agent', 'open_session', 'close_session', 'invoke_agent', 'cancel', 'get_status', 'handoff', 'deploy_agent', 'deploy_batch', 'update_agent', 'enable_agent', 'disable_agent', 'remove_agent', 'get_stats', 'generate_agents', 'filter_agents', 'create_enhanced_agent', 'create_agent_ecosystem', 'list_enhanced_types', 'execute_practical_tool', 'list_practical_tools', 'grant_permission', 'request_permission', 'approve_permission', 'revoke_permission', 'get_permissions', 'create_mcp_server', 'add_tool_to_agent', 'share_tool', 'connect_to_agent_mcp', 'execute_shared_tool', 'discover_tools', 'get_sharing_agreements']
+                        enum: ['list_agents', 'describe_agent', 'open_session', 'close_session', 'invoke_agent', 'cancel', 'get_status', 'handoff', 'deploy_agent', 'deploy_batch', 'update_agent', 'enable_agent', 'disable_agent', 'remove_agent', 'get_stats', 'generate_agents', 'filter_agents', 'create_enhanced_agent', 'create_agent_ecosystem', 'list_enhanced_types', 'create_advanced_agent', 'create_advanced_ecosystem', 'list_advanced_types', 'execute_practical_tool', 'execute_advanced_tool', 'list_practical_tools', 'list_advanced_tools', 'grant_permission', 'request_permission', 'approve_permission', 'revoke_permission', 'get_permissions', 'create_mcp_server', 'add_tool_to_agent', 'share_tool', 'connect_to_agent_mcp', 'execute_shared_tool', 'discover_tools', 'get_sharing_agreements']
                     },
                     // For describe_agent
                     id: { type: 'string' },
@@ -445,6 +447,81 @@ const server = new Server({
                         const { toolCategory } = params;
                         const tools = practicalToolRegistry.list(toolCategory);
                         const categories = practicalToolRegistry.getCategories();
+                        return ok({ tools, categories, count: tools.length });
+                    }
+                    case 'create_advanced_agent': {
+                        const { agentType, agentConfig = {} } = params;
+                        if (!agentType) {
+                            return fail('agentType is required for create_advanced_agent', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const agent = createAdvancedAgent(agentType, agentConfig);
+                            const success = agentRegistry.deploy(agent);
+                            agentOps.inc({ operation: 'create_advanced' });
+                            return ok({ deployed: success, agent, agentId: agent.id });
+                        }
+                        catch (error) {
+                            return fail(`Failed to create advanced agent: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'create_advanced_ecosystem': {
+                        const { useCase } = params;
+                        if (!useCase) {
+                            return fail('useCase is required for create_advanced_ecosystem', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const agents = createAdvancedEcosystem(useCase);
+                            const result = agentRegistry.deployBatch(agents);
+                            agentOps.inc({ operation: 'create_advanced_ecosystem' });
+                            return ok({ ...result, agents, useCase });
+                        }
+                        catch (error) {
+                            return fail(`Failed to create advanced ecosystem: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'list_advanced_types': {
+                        return ok({
+                            agentTypes: Object.values(ADVANCED_AGENT_TYPES),
+                            useCases: ['full-stack-automation', 'business-automation', 'ml-operations', 'enterprise-integration'],
+                            capabilities: {
+                                [ADVANCED_AGENT_TYPES.EMAIL_AUTOMATOR]: ['SMTP integration', 'Campaign tracking', 'Response processing', 'Automation rules'],
+                                [ADVANCED_AGENT_TYPES.DATABASE_MANAGER]: ['Multi-DB support', 'Query optimization', 'Backup automation', 'Performance tuning'],
+                                [ADVANCED_AGENT_TYPES.CLOUD_ORCHESTRATOR]: ['Multi-cloud deployment', 'Infrastructure as Code', 'Cost optimization', 'Auto-scaling'],
+                                [ADVANCED_AGENT_TYPES.ML_PIPELINE_MANAGER]: ['End-to-end ML pipelines', 'Model training', 'Hyperparameter tuning', 'Deployment automation'],
+                                [ADVANCED_AGENT_TYPES.WORKFLOW_ORCHESTRATOR]: ['Complex workflows', 'External integrations', 'Error handling', 'Parallel execution'],
+                                [ADVANCED_AGENT_TYPES.REAL_TIME_MONITOR]: ['Real-time metrics', 'Intelligent alerting', 'Dashboard creation', 'Multi-channel notifications']
+                            }
+                        });
+                    }
+                    case 'execute_advanced_tool': {
+                        const { toolName, toolParams = {}, executionContext = {} } = params;
+                        if (!toolName) {
+                            return fail('toolName is required for execute_advanced_tool', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const context = {
+                                agentId: 'system',
+                                requestId: ensureRequestId(),
+                                workingDirectory: process.cwd(),
+                                permissions: ['*'], // Full permissions for advanced tools
+                                limits: {
+                                    maxExecutionTime: 600000, // 10 minutes for advanced operations
+                                    maxFileSize: 100 * 1024 * 1024 // 100MB
+                                },
+                                ...executionContext
+                            };
+                            const result = await advancedToolRegistry.execute(toolName, toolParams, context);
+                            agentOps.inc({ operation: 'execute_advanced_tool' });
+                            return ok(result);
+                        }
+                        catch (error) {
+                            return fail(`Failed to execute advanced tool: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'list_advanced_tools': {
+                        const { toolCategory } = params;
+                        const tools = advancedToolRegistry.list(toolCategory);
+                        const categories = advancedToolRegistry.getCategories();
                         return ok({ tools, categories, count: tools.length });
                     }
                     // Permission Management
