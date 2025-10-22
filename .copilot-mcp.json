@@ -1,0 +1,154 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp-config.schema.json",
+  "mcpServers": {
+    "a2a-agent-control": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "ENABLE_STREAMING": "true",
+        "STREAM_PORT": "8787",
+        "STREAM_HOST": "127.0.0.1",
+        "MAX_CONCURRENCY": "50",
+        "LOG_LEVEL": "info",
+        "NODE_ENV": "production"
+      },
+      "disabled": false,
+      "alwaysAllow": [],
+      "metadata": {
+        "name": "A2A MCP Server",
+        "version": "0.1.0",
+        "description": "Agent-to-Agent Model Context Protocol server for advanced agent orchestration",
+        "author": "Scarmonit",
+        "repository": "https://github.com/Scarmonit/A2A",
+        "capabilities": [
+          "agent_control",
+          "agent_deployment",
+          "parallel_execution",
+          "websocket_streaming",
+          "permission_management",
+          "tool_sharing"
+        ],
+        "categories": [
+          "agent-orchestration",
+          "automation",
+          "collaboration",
+          "workflow"
+        ]
+      }
+    }
+  },
+  "presets": {
+    "web-development": {
+      "mcpServers": {
+        "a2a-web-dev": {
+          "command": "node",
+          "args": ["dist/index.js"],
+          "env": {
+            "ENABLE_STREAMING": "true",
+            "INITIAL_AGENTS": "web-scraper,content-writer,api-tester"
+          },
+          "metadata": {
+            "description": "Web development focused agent ecosystem"
+          }
+        }
+      }
+    },
+    "data-analysis": {
+      "mcpServers": {
+        "a2a-data": {
+          "command": "node",
+          "args": ["dist/index.js"],
+          "env": {
+            "ENABLE_STREAMING": "true",
+            "INITIAL_AGENTS": "data-analyst,content-writer"
+          },
+          "metadata": {
+            "description": "Data analysis and reporting agent ecosystem"
+          }
+        }
+      }
+    },
+    "devops": {
+      "mcpServers": {
+        "a2a-devops": {
+          "command": "node",
+          "args": ["dist/index.js"],
+          "env": {
+            "ENABLE_STREAMING": "true",
+            "INITIAL_AGENTS": "deploy-manager,security-scanner,real-time-monitor"
+          },
+          "metadata": {
+            "description": "DevOps and infrastructure management agents"
+          }
+        }
+      }
+    },
+    "full-automation": {
+      "mcpServers": {
+        "a2a-automation": {
+          "command": "node",
+          "args": ["dist/index.js"],
+          "env": {
+            "ENABLE_STREAMING": "true",
+            "MAX_CONCURRENCY": "100",
+            "INITIAL_AGENTS": "workflow-orchestrator,email-automator,database-manager,cloud-orchestrator"
+          },
+          "metadata": {
+            "description": "Complete business automation suite"
+          }
+        }
+      }
+    }
+  },
+  "tools": {
+    "agent_control": {
+      "description": "Unified agent control system for orchestrating multiple AI agents",
+      "actions": {
+        "list_agents": "List all available agents in the system",
+        "describe_agent": "Get detailed information about a specific agent",
+        "invoke_agent": "Invoke an agent with streaming response",
+        "open_session": "Open a new agent session",
+        "close_session": "Close an existing session",
+        "handoff": "Hand off execution to another agent",
+        "cancel": "Cancel ongoing operations",
+        "get_status": "Get current operation status",
+        "deploy_agent": "Deploy a new agent to the system",
+        "deploy_batch": "Deploy multiple agents at once",
+        "update_agent": "Update an existing agent",
+        "enable_agent": "Enable a disabled agent",
+        "disable_agent": "Disable an agent",
+        "remove_agent": "Remove an agent from the system",
+        "get_stats": "Get system statistics",
+        "generate_agents": "Generate multiple agents from a template",
+        "filter_agents": "Filter agents by criteria",
+        "create_enhanced_agent": "Create an enhanced agent with advanced capabilities",
+        "create_agent_ecosystem": "Create a complete agent ecosystem for a use case",
+        "create_advanced_agent": "Create an advanced agent with specialized features",
+        "create_advanced_ecosystem": "Create an advanced agent ecosystem",
+        "execute_practical_tool": "Execute a practical tool directly",
+        "execute_advanced_tool": "Execute an advanced tool",
+        "grant_permission": "Grant permissions to an agent",
+        "request_permission": "Request permissions from another agent",
+        "approve_permission": "Approve a permission request",
+        "revoke_permission": "Revoke a granted permission",
+        "get_permissions": "Get agent permissions and requests",
+        "create_mcp_server": "Create an MCP server for an agent",
+        "add_tool_to_agent": "Add a tool to an agent's MCP server",
+        "share_tool": "Share a tool between agents",
+        "connect_to_agent_mcp": "Connect to another agent's MCP server",
+        "execute_shared_tool": "Execute a shared tool",
+        "discover_tools": "Discover available tools across agents",
+        "get_sharing_agreements": "Get tool sharing agreements"
+      },
+      "useCases": [
+        "Orchestrate multiple agents working together on complex tasks",
+        "Deploy specialized agents for specific domains (web dev, data analysis, DevOps)",
+        "Create custom agent ecosystems tailored to your workflow",
+        "Share tools and capabilities between agents",
+        "Manage permissions and access control between agents",
+        "Monitor and track agent execution in real-time",
+        "Scale agent operations with parallel execution"
+      ]
+    }
+  }
+}

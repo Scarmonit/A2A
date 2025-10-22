@@ -9,12 +9,18 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 ## Features
 
 - **MCP Protocol Support**: Full implementation of the Model Context Protocol
+- **GitHub Copilot Integration**: Seamless integration with GitHub Copilot for AI-powered development
 - **WebSocket Streaming**: High-performance real-time communication
 - **Agent Management**: List, describe, open sessions, close sessions, invoke agents
 - **Handoff Support**: Seamless agent-to-agent handoffs
 - **Status Tracking**: Real-time status monitoring and cancellation
 - **Idempotency**: Built-in support for idempotent operations
 - **Parallel Command Execution**: Execute multiple commands concurrently using execa
+- **30+ Pre-built Agents**: Web scrapers, content writers, API testers, database managers, and more
+- **Agent Orchestration**: Create complex multi-agent workflows
+- **Tool Sharing**: Agents can share capabilities with each other
+- **Permission Management**: Fine-grained access control between agents
+- **Ecosystem Templates**: Pre-configured agent groups for common use cases
 
 ## Parallel Command Execution
 
@@ -166,6 +172,37 @@ npm start
 
 ## Usage
 
+### With GitHub Copilot (Recommended)
+
+**Quick Setup**: Run the automated setup script:
+
+```bash
+# Linux/macOS
+./setup-copilot.sh
+
+# Windows (PowerShell)
+.\setup-copilot.ps1
+```
+
+Or manually configure at `~/.config/github-copilot/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "a2a": {
+      "command": "node",
+      "args": ["/absolute/path/to/A2A/dist/index.js"],
+      "env": {
+        "ENABLE_STREAMING": "true",
+        "MAX_CONCURRENCY": "50"
+      }
+    }
+  }
+}
+```
+
+**📚 [Complete Copilot Integration Guide](./COPILOT_INTEGRATION.md)** - Detailed setup, use cases, and examples
+
 ### With Claude Desktop
 
 1. Install and build the server (see Installation)
@@ -235,6 +272,7 @@ See `.env.example` for required environment variables.
 
 ## Documentation
 
+- **[GitHub Copilot Integration](./COPILOT_INTEGRATION.md)** - Complete guide for Copilot integration
 - [Quick Deploy Guide](./QUICK_DEPLOY.md) - Fast deployment instructions
 - [Your Deployment Guide](./YOUR_DEPLOYMENT.md) - Custom deployment setup
 - [Ollama Setup](./OLLAMA_SETUP.md) - Ollama integration guide
