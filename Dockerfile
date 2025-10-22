@@ -1,14 +1,13 @@
 # Multi-stage build for optimal performance
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (including devDependencies for build)
+RUN npm ci
 
 # Copy source code
 COPY src/ ./src/
@@ -18,7 +17,6 @@ RUN npm run build
 
 # Production stage
 FROM node:20-alpine AS production
-
 WORKDIR /app
 
 # Install dumb-init for proper signal handling
@@ -35,6 +33,7 @@ COPY --from=builder /app/package*.json ./
 
 # Set ownership
 RUN chown -R agents:nodejs /app
+
 USER agents
 
 # Expose ports for MCP server and agent servers
