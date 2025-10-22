@@ -1,6 +1,6 @@
 // A2A MCP Dashboard WebSocket Server
 // Real-time streaming analytics with autonomous execution capabilities
-import WebSocket from 'ws';
+import WebSocke, { WebSocketServer }t from 'ws';
 import pino from 'pino';
 import { analyticsEngine } from './analytics-engine.js';
 
@@ -20,7 +20,7 @@ export interface WebSocketMessage {
 }
 
 export class DashboardWebSocketServer {
-  private wss: WebSocket.Server;
+  private wss: WebSocketServer;
   private clients: Map<string, DashboardClient> = new Map();
   private isPending = false;
   private broadcastInterval: NodeJS.Timeout | null = null;
@@ -28,7 +28,7 @@ export class DashboardWebSocketServer {
   private maxHistorySize = 1000;
 
   constructor(port: number = 8081) {
-    this.wss = new WebSocket.Server({ 
+    this.wss = new WebSocketServer({ 
       port,
       perMessageDeflate: {
         zlibDeflateOptions: {
@@ -49,7 +49,7 @@ export class DashboardWebSocketServer {
   }
 
   private initialize(): void {
-    this.wss.on('connection', (ws: WebSocket, req) => {
+    this.wss.on('connection', (ws: WebSocket, re: anyq) => {
       const clientId = this.generateClientId();
       const client: DashboardClient = {
         ws,
