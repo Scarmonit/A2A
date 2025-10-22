@@ -6,6 +6,7 @@ import { parse } from 'url';
 
 // Import the main MCP server logic
 // Note: This will need to be adjusted based on how you want to handle the stdio transport in serverless
+
 let mcpServerHandler;
 
 // Initialize the MCP server for HTTP requests instead of stdio
@@ -15,7 +16,7 @@ async function initMCPServer() {
   // Import your main server logic here
   // For Vercel, we need to adapt from stdio to HTTP
   const { agents } = await import('../dist/agents.js');
-  const { agentExecutor } = await import('../dist/agent-types.js');
+  const { agentExecutor } = await import('../dist/src/agent-types.js');
   
   mcpServerHandler = {
     agents,
@@ -70,61 +71,46 @@ export default async function handler(req, res) {
   try {
     const server = await initMCPServer();
     
-    // Health check endpoint
-    if (pathname === '/healthz') {
-      const health = await server.handleRequest('health', {});
-      res.status(200).json(health);
-      return;
+    if (pathname === '/health') {
+      const result = await server.handleRequest('health', {});
+      return res.status(200).json(result);
     }
     
-    // Metrics endpoint (simplified)
-    if (pathname === '/metrics') {
-      res.setHeader('Content-Type', 'text/plain');
-      res.status(200).send('# Vercel deployment - limited metrics\na2a_vercel_requests_total 1\n');
-      return;
+    if (pathname === '/agents') {
+      const result = await server.handleRequest('list_agents', {});
+      return res.status(200).json(result);
     }
     
-    // Demo endpoint
-    if (pathname.startsWith('/demo')) {
-      const msg = query.msg || 'Hello from Vercel';
-      const agentId = query.agent || 'echo';
-      const capability = query.capability || 'chat';
-      const input = { messages: [{ role: 'user', content: msg }] };
-      
-      const result = await server.handleRequest('invoke_agent', { agentId, capability, input });
-      res.status(200).json(result);
-      return;
-    }
-    
-    // Generic MCP endpoint for POST requests
+    // Parse JSON body for POST requests
     if (req.method === 'POST') {
       let body = '';
       req.on('data', chunk => body += chunk);
-      req.on('end', async () => {
-        try {
-          const { method, params } = JSON.parse(body);
-          const result = await server.handleRequest(method, params);
-          res.status(200).json(result);
-        } catch (error) {
-          res.status(400).json({ ok: false, error: { message: 'Invalid JSON' } });
-        }
-      });
-      return;
+      await new Promise(resolve => req.on('end', resolve));
+      
+      const data = JSON.parse(body);
+      const result = await server.handleRequest(data.method, data.params || {});
+      return res.status(200).json(result);
     }
     
     // Default response
-    res.status(200).json({
-      service: 'A2A MCP Server',
-      platform: 'Vercel',
-      endpoints: ['/healthz', '/metrics', '/demo'],
-      note: 'Limited functionality in serverless environment'
+    return res.status(200).json({
+      ok: true,
+      message: 'A2A MCP Server on Vercel',
+      endpoints: {
+        health: '/health',
+        agents: '/agents',
+        invoke: 'POST with {method, params}'
+      }
     });
     
   } catch (error) {
-    console.error('Vercel handler error:', error);
-    res.status(500).json({
+    console.error('Error handling request:', error);
+    return res.status(500).json({
       ok: false,
-      error: { message: 'Internal server error', details: error.message }
+      error: {
+        message: 'Internal server error',
+        details: error.message
+      }
     });
   }
 }
