@@ -427,7 +427,7 @@ export class AutonomousToolRegistry extends AdvancedToolRegistry {
       problemId: problem.id,
       type: problem.type,
       success: true,
-      changes: [],
+      changes: [ as string[]],
       testResult: null
     };
 
