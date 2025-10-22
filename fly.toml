@@ -1,0 +1,43 @@
+app = "a2a-mcp-agents"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  MAX_CONCURRENCY = "75"
+  MAX_QUEUE_SIZE = "30000"
+  ENABLE_STREAMING = "true"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  max_machines_running = 3
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
+
+[[vm.env]]
+  PORT = "8787"
+
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 0.33

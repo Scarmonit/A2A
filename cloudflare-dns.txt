@@ -1,0 +1,50 @@
+# Cloudflare DNS Configuration for A2A MCP Agents
+# Add these records in your Cloudflare dashboard
+
+## Primary Domain Setup
+# Replace 'yourdomain.com' with your actual domain
+
+# Main API (Railway)
+Type: CNAME
+Name: api
+Target: 
+TTL: Auto (300s)
+Proxy: Enabled ✅
+
+# Serverless Functions (Vercel)  
+Type: CNAME
+Name: functions
+Target: 
+TTL: Auto (300s)
+Proxy: Enabled ✅
+
+# WebSocket Streaming (Railway)
+Type: CNAME  
+Name: ws
+Target: 
+TTL: Auto (300s)
+Proxy: Disabled ❌ (WebSocket compatibility)
+
+# Health Check (Railway)
+Type: CNAME
+Name: health
+Target:   
+TTL: Auto (300s)
+Proxy: Enabled ✅
+
+# Metrics (Railway)
+Type: CNAME
+Name: metrics
+Target: 
+TTL: Auto (300s) 
+Proxy: Enabled ✅
+
+## Cloudflare Settings Recommendations:
+# SSL/TLS: Full (strict)
+# Security Level: Medium
+# Browser Cache TTL: 4 hours
+# Edge Cache TTL: 2 hours
+# Always Use HTTPS: On
+# HTTP/3: On
+# Brotli: On
+# Minify: CSS, JavaScript, HTML

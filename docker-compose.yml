@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  a2a-mcp-server:
+    build: .
+    container_name: a2a-agents
+    ports:
+      - "8787:8787"
+      - "8800-8850:8800-8850"  # Agent MCP servers
+    environment:
+      - NODE_ENV=production
+      - MAX_CONCURRENCY=100
+      - MAX_QUEUE_SIZE=50000
+      - ENABLE_STREAMING=true
+      - STREAM_PORT=8787
+      - METRICS_PORT=9090
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - agent_data:/app/data
+    networks:
+      - agent_network
+
+  # Optional: Monitoring stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: a2a-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - agent_network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: a2a-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=agents123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - agent_network
+    profiles:
+      - monitoring
+
+volumes:
+  agent_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  agent_network:
+    driver: bridge

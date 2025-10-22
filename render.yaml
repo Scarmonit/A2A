@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: a2a-mcp-server
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: node --max-old-space-size=512 dist/index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MAX_CONCURRENCY
+        value: 25
+      - key: MAX_QUEUE_SIZE  
+        value: 10000
+      - key: ENABLE_STREAMING
+        value: true
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        fromService:
+          type: web
+          name: a2a-mcp-server
+          property: port

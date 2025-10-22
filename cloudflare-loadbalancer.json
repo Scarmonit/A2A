@@ -1,0 +1,17 @@
+{
+  "description": "A2A MCP Agents Load Balancer",
+  "name": "a2a-agents-lb",
+  "fallback_pool": "railway-primary",
+  "default_pools": ["railway-primary", "vercel-backup"],
+  "region_pools": {
+    "ENAM": ["railway-primary"],
+    "EU": ["vercel-backup"],  
+    "APAC": ["railway-primary"]
+  },
+  "pop_pools": {},
+  "proxied": true,
+  "enabled": true,
+  "ttl": 30,
+  "steering_policy": "dynamic_latency",
+  "session_affinity": "cookie"
+}

@@ -1,0 +1,24 @@
+# UptimeRobot monitoring configuration
+# Add these monitors in your UptimeRobot dashboard
+
+Monitor 1: Railway Main API
+- Type: HTTP(s)
+- URL: /healthz
+- Monitoring Interval: 1 minute
+- HTTP Method: GET
+- Expected Status Code: 200
+
+Monitor 2: Vercel Serverless
+- Type: HTTP(s)  
+- URL: https:///healthz
+- Monitoring Interval: 5 minutes
+- HTTP Method: GET
+- Expected Status Code: 200
+
+Monitor 3: Agent System Test
+- Type: HTTP(s)
+- URL: 
+- Monitoring Interval: 5 minutes  
+- HTTP Method: POST
+- Post Data: {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"agent_control","arguments":{"action":"get_stats"}}}
+- Content-Type: application/json
