@@ -69,207 +69,226 @@ class RingBuffer<T> {
     const out: T[] = []
     for (let i = 0; i < this.size; i++) {
       const idx = (this.head - this.size + i + this.capacity) % this.capacity
-      const v = this.buf[idx]
-      if (v !== undefined) out.push(v)
+      const val = this.buf[idx]
+      if (val !== undefined) out.push(val)
     }
     return out
-  }
-
-  get length() {
-    return this.size
   }
 }
 
 export class AnalyticsEngine {
-  private events = new RingBuffer<AnalyticsEvent>(Number(process.env.ANALYTICS_MAX_EVENTS || 100000))
+  private static instance: AnalyticsEngine | null = null
+  private registry: Registry
+  private events = new RingBuffer<AnalyticsEvent>(10_000)
   private metrics = new Map<string, any>()
-  private registry = new Registry()
-  private insights: AnalyticsInsight[] = []
-  private last5mCounters = { agentExec: 0, workflowExec: 0, successes: 0, execTimeSum: 0, activeAgents: new Set<string>() }
-  private last5mWindow: Array<{ t: number; type: 'agent' | 'workflow'; success?: boolean; execTime?: number; agentId?: string }> = []
-
-  constructor() {
-    this.initializeMetrics()
-    this.startAnalyticsJobs()
+  private last5mCounters = {
+    requests: 0,
+    errors: 0,
+    activeAgents: new Set<string>()
   }
 
-  track(event: Omit<AnalyticsEvent, 'timestamp'>): void {
-    try {
-      const analyticsEvent: AnalyticsEvent = { ...event, timestamp: Date.now() }
-      const sampleRate = Number(process.env.ANALYTICS_SAMPLE_RATE || 1)
-      if (sampleRate < 1 && Math.random() > sampleRate) {
-        this.updateMetrics(analyticsEvent)
-        this.updateRealtime(analyticsEvent)
-        return
+  private constructor() {
+    this.registry = new Registry()
+  }
+
+  public static getInstance(): AnalyticsEngine {
+    if (!AnalyticsEngine.instance) {
+      AnalyticsEngine.instance = new AnalyticsEngine()
+    }
+    return AnalyticsEngine.instance
+  }
+
+  track(event: Omit<AnalyticsEvent, 'timestamp'>) {
+    const fullEvent: AnalyticsEvent = { ...event, timestamp: Date.now() }
+    this.events.push(fullEvent)
+
+    if (fullEvent.agentId) {
+      this.last5mCounters.activeAgents.add(fullEvent.agentId)
+    }
+    this.last5mCounters.requests++
+
+    if (fullEvent.eventType === 'error') {
+      this.last5mCounters.errors++
+    }
+
+    logger.debug({ event: fullEvent }, 'Analytics event tracked')
+  }
+
+  defineMetric(def: MetricDefinition) {
+    if (this.metrics.has(def.name)) return
+
+    let metric: any
+    switch (def.type) {
+      case 'counter':
+        metric = new Counter({
+          name: def.name,
+          help: def.help,
+          labelNames: def.labels || [],
+          registers: [this.registry]
+        })
+        break
+      case 'histogram':
+        metric = new Histogram({
+          name: def.name,
+          help: def.help,
+          labelNames: def.labels || [],
+          buckets: def.buckets || [0.1, 0.5, 1, 2, 5, 10],
+          registers: [this.registry]
+        })
+        break
+      case 'gauge':
+        metric = new Gauge({
+          name: def.name,
+          help: def.help,
+          labelNames: def.labels || [],
+          registers: [this.registry]
+        })
+        break
+    }
+    this.metrics.set(def.name, metric)
+  }
+
+  incrementCounter(name: string, labels?: Record<string, string>, value = 1) {
+    const counter = this.metrics.get(name) as Counter<any>
+    if (counter) {
+      labels ? counter.inc(labels, value) : counter.inc(value)
+    }
+  }
+
+  observeHistogram(name: string, value: number, labels?: Record<string, string>) {
+    const hist = this.metrics.get(name) as Histogram<any>
+    if (hist) {
+      labels ? hist.observe(labels, value) : hist.observe(value)
+    }
+  }
+
+  setGauge(name: string, value: number, labels?: Record<string, string>) {
+    const gauge = this.metrics.get(name) as Gauge<any>
+    if (gauge) {
+      labels ? gauge.set(labels, value) : gauge.set(value)
+    }
+  }
+
+  async query(q: AnalyticsQuery): Promise<any[]> {
+    const filtered = this.events.toArray().filter(e => {
+      if (e.timestamp < q.timeRange.start || e.timestamp > q.timeRange.end) return false
+      if (q.filters?.agentId && e.agentId !== q.filters.agentId) return false
+      if (q.filters?.eventType && e.eventType !== q.filters.eventType) return false
+      if (q.filters?.userId && e.userId !== q.filters.userId) return false
+      if (q.filters?.tags) {
+        for (const [k, v] of Object.entries(q.filters.tags)) {
+          if (e.tags?.[k] !== v) return false
+        }
       }
-      this.events.push(analyticsEvent)
-      this.updateMetrics(analyticsEvent)
-      this.updateRealtime(analyticsEvent)
-      logger.debug({ event: analyticsEvent }, 'Analytics event tracked')
-    } catch (error) {
-      logger.error({ error }, 'Error tracking analytics event')
-    }
-  }
-
-  private updateRealtime(event: AnalyticsEvent): void {
-    const now = Date.now()
-    const fiveMinAgo = now - 5 * 60 * 1000
-    this.last5mWindow = this.last5mWindow.filter(e => e.t >= fiveMinAgo)
-
-    if (event.eventType === 'agent.execute') {
-      this.last5mCounters.agentExec++
-      this.last5mWindow.push({ t: now, type: 'agent', success: event.data.success, execTime: event.data.executionTime, agentId: event.agentId })
-      if (event.agentId) this.last5mCounters.activeAgents.add(event.agentId)
-      if (event.data.success) this.last5mCounters.successes++
-      if (typeof event.data.executionTime === 'number') this.last5mCounters.execTimeSum += event.data.executionTime
-    } else if (event.eventType === 'workflow.execute') {
-      this.last5mCounters.workflowExec++
-      this.last5mWindow.push({ t: now, type: 'workflow', success: event.data.success, execTime: event.data.executionTime })
-      if (event.data.success) this.last5mCounters.successes++
-      if (typeof event.data.executionTime === 'number') this.last5mCounters.execTimeSum += event.data.executionTime
-    }
-  }
-
-  private updateMetrics(event: AnalyticsEvent): void {
-    const counter = this.metrics.get(`event_${event.eventType}_total`) as Counter<any> | undefined
-    if (counter) counter.inc({ platform: PLATFORM, agent_id: event.agentId || 'unknown' })
-
-    if (event.eventType === 'agent.execute' && typeof event.data.executionTime === 'number') {
-      const hist = this.metrics.get('agent_execution_duration_seconds') as Histogram<any> | undefined
-      if (hist) hist.observe({ platform: PLATFORM, agent_id: event.agentId || 'unknown' }, event.data.executionTime / 1000)
-    }
-  }
-
-  getRealTimeStats(): any {
-    const events = this.last5mWindow
-    const executionTimes = events.map(e => e.execTime).filter((t): t is number => t !== undefined)
-    const averageExecutionTime = executionTimes.reduce((a, b) => a + b, 0) / (executionTimes.length || 1)
-    const successfulEvents = events.filter(e => e.success === true)
-    const successRate = events.length > 0 ? successfulEvents.length / events.length : 0
-    const agentStats = new Map<string, { count: number; successes: number }>()
-
-    events.forEach(e => {
-      if (e.agentId) {
-        const stat = agentStats.get(e.agentId) || { count: 0, successes: 0 }
-        stat.count++
-        if (e.success) stat.successes++
-        agentStats.set(e.agentId, stat)
-      }
+      return true
     })
 
-    return {
-      window: '5m',
-      timestamp: Date.now(),
-      agentExecutions: this.last5mCounters.agentExec,
-      workflowExecutions: this.last5mCounters.workflowExec,
-      totalExecutions: this.last5mCounters.agentExec + this.last5mCounters.workflowExec,
-      successRate,
-      averageExecutionTime,
-      activeAgents: this.last5mCounters.activeAgents.size,
-      agentStats: Object.fromEntries(agentStats)
-    }
-  }
+    if (!q.aggregation) return filtered.slice(0, q.limit || 100)
 
-  query(q: AnalyticsQuery): AnalyticsEvent[] {
-    let results = this.events.toArray().filter(e => e.timestamp >= q.timeRange.start && e.timestamp <= q.timeRange.end)
-
-    if (q.filters) {
-      if (q.filters.agentId) results = results.filter(e => e.agentId === q.filters!.agentId)
-      if (q.filters.eventType) results = results.filter(e => e.eventType === q.filters!.eventType)
-      if (q.filters.userId) results = results.filter(e => e.userId === q.filters!.userId)
-      if (q.filters.tags) {
-        results = results.filter(e => e.tags && Object.entries(q.filters!.tags!).every(([k, v]) => e.tags![k] === v))
+    if (q.groupBy && q.groupBy.length > 0) {
+      const agentStats = new Map<string, {count: number, successes: number}>()
+      for (const ev of filtered) {
+        const key = q.groupBy.map(field => (ev as any)[field] ?? 'unknown').join('__')
+        const stats = agentStats.get(key) || { count: 0, successes: 0 }
+        stats.count++
+        if (ev.eventType === 'success') stats.successes++
+        agentStats.set(key, stats)
       }
+      return Array.from(agentStats.entries()).map(([k, v]) => ({
+        key: k,
+        count: v.count,
+        successRate: v.count > 0 ? (v.successes / v.count) * 100 : 0
+      }))
     }
 
-    if (q.limit) results = results.slice(0, q.limit)
-    return results
-  }
-
-  aggregate(q: AnalyticsQuery): any {
-    const events = this.query(q)
-    if (!q.aggregation) return { count: events.length }
-
-    const agg = q.aggregation
-    if (agg.type === 'count') return { count: events.length }
-    if (!agg.field) return { error: 'field required for aggregation' }
-
-    const values = events.map(e => e.data[agg.field!]).filter(v => typeof v === 'number')
-
-    switch (agg.type) {
-      case 'sum':
-        return { sum: values.reduce((a, b) => a + b, 0) }
-      case 'avg':
-        return { avg: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0 }
-      case 'min':
-        return { min: values.length > 0 ? Math.min(...values) : null }
-      case 'max':
-        return { max: values.length > 0 ? Math.max(...values) : null }
+    switch (q.aggregation.type) {
+      case 'count':
+        return [{ value: filtered.length }]
+      case 'sum': {
+        const field = q.aggregation.field || 'value'
+        const sum = filtered.reduce((acc, e) => acc + ((e.data[field] as number) || 0), 0)
+        return [{ value: sum }]
+      }
+      case 'avg': {
+        const field = q.aggregation.field || 'value'
+        const vals = filtered.map(e => (e.data[field] as number) || 0)
+        const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+        return [{ value: avg }]
+      }
+      case 'min': {
+        const field = q.aggregation.field || 'value'
+        const vals = filtered.map(e => (e.data[field] as number) || 0)
+        return [{ value: vals.length > 0 ? Math.min(...vals) : 0 }]
+      }
+      case 'max': {
+        const field = q.aggregation.field || 'value'
+        const vals = filtered.map(e => (e.data[field] as number) || 0)
+        return [{ value: vals.length > 0 ? Math.max(...vals) : 0 }]
+      }
       case 'percentile': {
-        const p = agg.percentile || 50
-        const sorted = values.sort((a, b) => a - b)
-        const idx = Math.ceil((p / 100) * sorted.length) - 1
-        return { percentile: sorted[idx] || null }
+        const field = q.aggregation.field || 'value'
+        const p = q.aggregation.percentile || 95
+        const vals = filtered.map(e => (e.data[field] as number) || 0).sort((a, b) => a - b)
+        const idx = Math.ceil((p / 100) * vals.length) - 1
+        return [{ value: vals.length > 0 ? vals[Math.max(0, idx)] : 0 }]
       }
       default:
-        return { error: 'unknown aggregation type' }
+        return []
     }
   }
 
-  generateInsights(): AnalyticsInsight[] {
+  async generateInsights(): Promise<AnalyticsInsight[]> {
     const insights: AnalyticsInsight[] = []
     const now = Date.now()
-    const oneHourAgo = now - 60 * 60 * 1000
-    const recentEvents = this.events.toArray().filter(e => e.timestamp >= oneHourAgo)
-    const errorEvents = recentEvents.filter(e => e.eventType.endsWith('.error'))
+    const last5m = now - 5 * 60 * 1000
 
-    if (errorEvents.length > 10) {
+    const recentEvents = await this.query({
+      timeRange: { start: last5m, end: now },
+      filters: {},
+      limit: 10000
+    })
+
+    const errorRate = recentEvents.filter(e => e.eventType === 'error').length / Math.max(recentEvents.length, 1)
+    if (errorRate > 0.1) {
       insights.push({
-        type: 'anomaly',
+        type: 'threshold',
         severity: 'warning',
-        title: 'High error rate detected',
-        description: `${errorEvents.length} errors in the last hour`,
-        data: { errorCount: errorEvents.length, timeRange: { start: oneHourAgo, end: now } },
-        recommendations: ['Check logs for error details', 'Investigate agent configurations'],
-        confidence: 0.8
+        title: 'High Error Rate',
+        description: `Error rate is ${(errorRate * 100).toFixed(2)}% in the last 5 minutes`,
+        data: { errorRate, recentErrorCount: recentEvents.filter(e => e.eventType === 'error').length },
+        recommendations: ['Check recent logs for recurring error patterns', 'Review agent health metrics'],
+        confidence: 0.95
+      })
+    }
+
+    const uniqueAgents = new Set(recentEvents.filter(e => e.agentId).map(e => e.agentId))
+    if (uniqueAgents.size > 50) {
+      insights.push({
+        type: 'usage_pattern',
+        severity: 'info',
+        title: 'High Agent Activity',
+        description: `${uniqueAgents.size} unique agents active in the last 5 minutes`,
+        data: { activeAgents: uniqueAgents.size },
+        recommendations: ['Consider scaling resources if response times are increasing'],
+        confidence: 0.9
       })
     }
 
     return insights
   }
 
-  private initializeMetrics(): void {
-    const eventCounter = new Counter({
-      name: 'analytics_events_total',
-      help: 'Total analytics events',
-      labelNames: ['platform', 'event_type'],
-      registers: [this.registry]
-    })
-    this.metrics.set('event_total', eventCounter)
-
-    const agentExecDuration = new Histogram({
-      name: 'agent_execution_duration_seconds',
-      help: 'Agent execution duration',
-      labelNames: ['platform', 'agent_id'],
-      registers: [this.registry]
-    })
-    this.metrics.set('agent_execution_duration_seconds', agentExecDuration)
-  }
-
-  private startAnalyticsJobs(): void {
-    setInterval(() => {
-      const stats = this.getRealTimeStats()
-      logger.info({ stats }, 'Real-time analytics stats')
-
-      const insights = this.generateInsights()
-      if (insights.length > 0) {
-        this.insights = insights
-        logger.info({ insights }, 'Generated analytics insights')
-      }
-    }, 60000)
+  async getSnapshot() {
+    return {
+      last5mRequests: this.last5mCounters.requests,
+      last5mErrors: this.last5mCounters.errors,
+      activeAgents: this.last5mCounters.activeAgents.size,
+      insights: await this.generateInsights()
+    }
   }
 
   async getMetrics(): Promise<string> {
     return this.registry.metrics()
   }
 }
+
+export default AnalyticsEngine
