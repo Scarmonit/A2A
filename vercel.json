@@ -1,12 +1,13 @@
 {
   "version": 2,
-  "name": "a2a-mcp-agents",
   "builds": [
     {
       "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
-        "maxLambdaSize": "50mb"
+        "maxLambdaSize": "50mb",
+        "maxDuration": 300,
+        "memory": 1024
       }
     }
   ],
@@ -40,11 +41,5 @@
     "LOG_LEVEL": "info",
     "METRICS_PORT": "0",
     "VERCEL_DEPLOYMENT": "true"
-  },
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 300,
-      "memory": 1024
-    }
   }
 }
