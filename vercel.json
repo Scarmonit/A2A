@@ -1,28 +1,35 @@
 {
   "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
   "routes": [
     {
-      "src": "/healthz",
-      "dest": "/"
+      "src": "/api/agent",
+      "dest": "/api/agent.js"
     },
     {
-      "src": "/metrics",
-      "dest": "/"
+      "src": "/api/dashboard",
+      "dest": "/api/dashboard.js"
     },
     {
-      "src": "/demo(/?)(.*)",
-      "dest": "/"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/"
+      "src": "/(healthz|metrics|demo.*)",
+      "dest": "/api/index.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/"
+      "dest": "/api/index.js"
     }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "BACKEND_BASE_URL": "https://ac532d3b-0a00-4589-b880-cb0c4cf971a4.up.railway.app"
   }
 }
