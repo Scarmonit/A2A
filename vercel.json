@@ -1,31 +1,25 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 300,
-      "memory": 1024
-    }
-  },
   "routes": [
     {
       "src": "/healthz",
-      "dest": "/api/index.js"
+      "dest": "/"
     },
     {
       "src": "/metrics",
-      "dest": "/api/index.js"
+      "dest": "/"
     },
     {
       "src": "/demo(/?)(.*)",
-      "dest": "/api/index.js"
+      "dest": "/"
     },
     {
       "src": "/api/(.*)",
-      "dest": "/api/index.js"
+      "dest": "/"
     },
     {
       "src": "/(.*)",
-      "dest": "/api/index.js"
+      "dest": "/"
     }
   ],
   "env": {
