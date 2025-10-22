@@ -146,8 +146,8 @@ export class AnalyticsEngine {
     const averageExecutionTime = executionTimes.reduce((a, b) => a + b, 0) / (executionTimes.length || 1)
     const successfulEvents = events.filter(e => e.success === true)
     const successRate = events.length > 0 ? successfulEvents.length / events.length : 0
-    const agentStats = new Map<string, { count: number; successes: number }>()
 
+    const agentStats = new Map<string, { count: number; successes: number }>()
     events.forEach(e => {
       if (e.agentId) {
         const stat = agentStats.get(e.agentId) || { count: 0, successes: 0 }
