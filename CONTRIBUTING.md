@@ -1,32 +1,28 @@
 # Contributing to A2A MCP Server
-
 Thank you for your interest in contributing to the A2A MCP Server project! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
-
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
 - [Coding Standards](#coding-standards)
 - [Commit Message Guidelines](#commit-message-guidelines)
 - [Pull Request Process](#pull-request-process)
+- [Code Ownership](#code-ownership)
 - [Testing](#testing)
 - [Documentation](#documentation)
 
 ## Code of Conduct
-
 By participating in this project, you agree to maintain a respectful and inclusive environment for all contributors.
 
 ## Getting Started
 
 ### Prerequisites
-
 - Node.js 20.x or higher
 - npm 9.x or higher
 - Git
 
 ### Setup
-
 1. Fork the repository
 2. Clone your fork:
    ```bash
@@ -69,120 +65,67 @@ By participating in this project, you agree to maintain a respectful and inclusi
 ## Coding Standards
 
 ### TypeScript Guidelines
-
 - Use TypeScript for all new code
 - Enable strict type checking
-- Avoid using `any` type when possible
-- Use interfaces for object shapes
-- Use type guards for runtime type checking
+- Define types for function parameters and returns
+- Use interfaces for complex objects
 
 ### Code Style
-
-- Use 2 spaces for indentation
-- Use single quotes for strings
-- Add semicolons at the end of statements
-- Maximum line length: 100 characters
+- Use ESLint for linting (`npm run lint`)
+- Follow existing code patterns
 - Use meaningful variable and function names
+- Keep functions small and focused
+- Avoid deep nesting (max 3 levels)
 
-### File Organization
-
-```
-src/
-├── index.ts          # Entry point
-├── agents.ts         # Agent implementations
-├── server.ts         # Server configuration
-└── types/            # Type definitions
-```
+### Error Handling
+- Always handle errors appropriately
+- Use try-catch for async operations
+- Log errors with context
+- Return meaningful error messages
 
 ## Commit Message Guidelines
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-### Format
+We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
 
 ```
-<type>(<scope>): <short summary>
+<type>(<scope>): <description>
 
-<body>
+[optional body]
 
-<footer>
+[optional footer]
 ```
 
 ### Types
-
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
+- `style`: Code style changes (formatting, semicolons, etc.)
 - `refactor`: Code refactoring
-- `perf`: Performance improvements
 - `test`: Adding or updating tests
 - `chore`: Maintenance tasks
-- `ci`: CI/CD changes
+- `perf`: Performance improvements
 
 ### Examples
-
 ```
-feat(agents): add support for streaming responses
-
-Implement WebSocket streaming for agent responses to improve
-real-time communication capabilities.
-
-Closes #123
-```
-
-```
-fix(auth): resolve token refresh issue
-
-Fix token refresh logic that was causing authentication failures
-after extended sessions.
-
-Closes #456
-```
-
-```
-docs: update deployment instructions
-
-BREAKING CHANGE: Changed environment variable names for consistency
+feat(agents): add new capability for data processing
+fix(server): resolve WebSocket connection timeout
+docs(readme): update installation instructions
 ```
 
 ## Pull Request Process
 
-### Before Submitting
+1. **Before submitting**:
+   - Update documentation
+   - Add/update tests
+   - Ensure all tests pass
+   - Update CHANGELOG.md
 
-1. ✅ Ensure your code builds without errors
-2. ✅ Run all tests and ensure they pass
-3. ✅ Update documentation if needed
-4. ✅ Add/update tests for your changes
-5. ✅ Follow the coding standards
-6. ✅ Update CHANGELOG.md with your changes
-
-### PR Template
-
-Your PR should include:
-
-- **Summary**: Brief description of changes
-- **Why**: Reason for the changes
-- **What**: Key technical changes made
-- **Testing**: How you tested the changes
-- **Checklist**:
-  - [ ] Lint passes
-  - [ ] Build succeeds
-  - [ ] Tests added/updated
-  - [ ] Documentation updated
-  - [ ] CHANGELOG.md updated
-
-### Review Process
-
-1. Automated checks must pass:
-   - Linting
-   - Build
-   - Tests
-   - Security scans
-
-2. Code review by maintainers:
-   - At least one approval required
-   - Address all review comments
+2. **PR Description should include**:
+   - Summary of changes
+   - Related issues (use `Closes #123`)
+   - Testing performed
+   - Breaking changes (if any)
+   - Screenshots (for UI changes)
 
 3. Auto-merge conditions (for trusted contributors):
    - All checks pass
@@ -190,10 +133,41 @@ Your PR should include:
    - No merge conflicts
    - No blocking labels
 
+## Code Ownership
+
+### CODEOWNERS File
+This repository uses a [CODEOWNERS](https://github.com/Scarmonit/A2A/blob/master/CODEOWNERS) file to define code ownership and automatically request reviews from the appropriate team members. The current code owners are:
+
+- **@Scarmonit** - Repository owner and primary maintainer
+- **@jules** - Co-owner with full review authority
+- **@copilot** - AI assistant for automated reviews and suggestions
+
+### Review Process
+When you submit a pull request that modifies files covered by CODEOWNERS:
+
+1. **Automatic Review Requests**: GitHub will automatically request reviews from the designated code owners based on which files you've changed.
+
+2. **Required Approvals**: Pull requests typically require at least one approval from a code owner before merging, depending on the repository's branch protection rules.
+
+3. **Code Owner Responsibilities**:
+   - Review pull requests for their areas of ownership
+   - Provide constructive feedback
+   - Ensure code quality and consistency
+   - Verify tests pass and documentation is updated
+
+### Adding New Code Owners
+If you believe additional code owners should be added for specific areas of the codebase:
+
+1. Open an issue discussing the proposed change
+2. Explain the rationale (e.g., domain expertise, active maintenance)
+3. Tag existing code owners for review
+4. Submit a PR updating the CODEOWNERS file after consensus
+
+**Note**: CODEOWNERS is a review mechanism, not a permission system. Repository write access must be configured separately in GitHub settings.
+
 ## Testing
 
 ### Running Tests
-
 ```bash
 # Build the project
 npm run build
@@ -207,7 +181,6 @@ node simple-agent-test.js
 ```
 
 ### Writing Tests
-
 - Test files should be named: `test-*.js`
 - Include both positive and negative test cases
 - Test edge cases and error conditions
@@ -216,19 +189,16 @@ node simple-agent-test.js
 ## Documentation
 
 ### Code Documentation
-
 - Add JSDoc comments for public APIs
 - Document complex logic with inline comments
 - Keep comments up to date with code changes
 
 ### Project Documentation
-
 - Update README.md for user-facing changes
 - Update deployment docs for infrastructure changes
 - Add examples for new features
 
 ### Documentation Files
-
 - `README.md` - Project overview and quick start
 - `CHANGELOG.md` - Version history and changes
 - `QUICK_DEPLOY.md` - Deployment instructions
@@ -236,7 +206,6 @@ node simple-agent-test.js
 - `YOUR_DEPLOYMENT.md` - Custom deployment guide
 
 ## Questions?
-
 If you have questions or need help:
 
 1. Check existing documentation
@@ -245,7 +214,6 @@ If you have questions or need help:
 4. Tag maintainers if urgent
 
 ## License
-
 By contributing to A2A MCP Server, you agree that your contributions will be licensed under the same license as the project.
 
 Thank you for contributing! 🎉

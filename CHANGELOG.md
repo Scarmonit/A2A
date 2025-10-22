@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GitHub Copilot Integration**: Complete MCP integration for GitHub Copilot
+  - Configuration file (.github/copilot/mcp-config.json)
+  - VS Code settings template (.vscode/settings.example.json)
+  - Comprehensive integration guide (docs/COPILOT_INTEGRATION.md)
+  - Quick start guide (docs/COPILOT_QUICKSTART.md)
+  - Working examples (examples/copilot-integration-example.ts)
+  - Enables Copilot to use 20+ agent types and advanced tools
+  - Real-time WebSocket streaming support
+  - Permission management and agent-to-agent handoffs
 - Full automation setup for Copilot
 - CHANGELOG.md for tracking project changes
 - CODEOWNERS for code ownership tracking
@@ -19,9 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Enhanced copilot-instructions.md with repository-specific context
 - Updated .gitignore to exclude build artifacts and dependencies
+- Updated README.md with GitHub Copilot integration section
 
 ### Fixed
 - Build issues with missing @types/uuid dependency
+- Syntax error in websocket-server.ts (incomplete getStats method)
 
 ## [0.1.0] - 2025-10-22
 

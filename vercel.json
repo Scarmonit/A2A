@@ -2,29 +2,25 @@
   "version": 2,
   "builds": [
     {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/index.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxDuration": 300,
-        "memory": 1024
-      }
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/healthz",
-      "dest": "/api/index.js"
+      "src": "/api/agent",
+      "dest": "/api/agent.js"
     },
     {
-      "src": "/metrics",
-      "dest": "/api/index.js" 
+      "src": "/api/dashboard",
+      "dest": "/api/dashboard.js"
     },
     {
-      "src": "/demo(/?)(.*)",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/api/(.*)",
+      "src": "/(healthz|metrics|demo.*)",
       "dest": "/api/index.js"
     },
     {
@@ -34,11 +30,6 @@
   ],
   "env": {
     "NODE_ENV": "production",
-    "MAX_CONCURRENCY": "5",
-    "MAX_QUEUE_SIZE": "2000",
-    "ENABLE_STREAMING": "false",
-    "LOG_LEVEL": "info",
-    "METRICS_PORT": "0",
-    "VERCEL_DEPLOYMENT": "true"
+    "BACKEND_BASE_URL": "https://ac532d3b-0a00-4589-b880-cb0c4cf971a4.up.railway.app"
   }
 }
