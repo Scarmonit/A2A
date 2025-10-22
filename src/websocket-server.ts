@@ -1,8 +1,8 @@
 // A2A MCP Dashboard WebSocket Server
 // Real-time streaming analytics with autonomous execution capabilities
-import WebSocket, { WebSocketServer } from 'ws';import pino from 'pino';
+import WebSocket, { WebSocketServer } from 'ws';
+import pino from 'pino';
 import { analyticsEngine } from './analytics-engine.js';
-
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 export interface DashboardClient {
