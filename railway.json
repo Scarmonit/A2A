@@ -17,8 +17,8 @@
         "ENABLE_STREAMING": "true",
         "STREAM_PORT": "8787",
         "STREAM_HOST": "0.0.0.0",
-        "MAX_CONCURRENCY": "50",
-        "MAX_QUEUE_SIZE": "25000",
+        "MAX_CONCURRENCY": "100",
+        "MAX_QUEUE_SIZE": "50000",
         "LOG_LEVEL": "info",
         "METRICS_PORT": "8787"
       }
