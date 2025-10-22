@@ -17,6 +17,17 @@ export interface GreenletBridgeConfig {
   agentId?: string;
   capabilities?: string[];
   timeout?: number;
+  maxRetries?: number;
+  retryDelay?: number;
+  messageQueueSize?: number;
+}
+
+export interface MessageMetrics {
+  messagesSent: number;
+  messagesReceived: number;
+  errors: number;
+  averageResponseTime: number;
+  lastMessageTime: number;
 }
 
 export class GreenletBridgeAdapter extends EventEmitter {
@@ -24,6 +35,16 @@ export class GreenletBridgeAdapter extends EventEmitter {
   private process: ChildProcess | null = null;
   private connected: boolean = false;
   private messageBuffer: string = '';
+  private messageQueue: Array<{ message: Record<string, any>; timestamp: number }> = [];
+  private metrics: MessageMetrics = {
+    messagesSent: 0,
+    messagesReceived: 0,
+    errors: 0,
+    averageResponseTime: 0,
+    lastMessageTime: 0
+  };
+  private pendingMessages: Map<string, { resolve: Function; reject: Function; timestamp: number }> = new Map();
+  private messageIdCounter: number = 0;
 
   constructor(config: GreenletBridgeConfig = {}) {
     super();
@@ -34,6 +55,9 @@ export class GreenletBridgeAdapter extends EventEmitter {
       agentId: config.agentId || 'greenlet-agent',
       capabilities: config.capabilities || [],
       timeout: config.timeout || 30000,
+      maxRetries: config.maxRetries ?? 3,
+      retryDelay: config.retryDelay ?? 1000,
+      messageQueueSize: config.messageQueueSize ?? 100,
     };
   }
   
@@ -100,9 +124,136 @@ export class GreenletBridgeAdapter extends EventEmitter {
     try {
       const json = JSON.stringify(message) + '\n';
       this.process.stdin?.write(json);
+      this.metrics.messagesSent++;
+      this.metrics.lastMessageTime = Date.now();
     } catch (error) {
+      this.metrics.errors++;
       logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Failed to send message');
       throw error;
+    }
+  }
+
+  /**
+   * Send message with response expectation and retry logic
+   */
+  async sendMessageWithResponse(message: Record<string, any>, expectedResponseType: string, retries: number = this.config.maxRetries): Promise<any> {
+    const messageId = `msg-${this.messageIdCounter++}`;
+    const messageWithId = { ...message, messageId };
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            this.pendingMessages.delete(messageId);
+            reject(new Error(`Message timeout after ${this.config.timeout}ms`));
+          }, this.config.timeout);
+
+          this.pendingMessages.set(messageId, { 
+            resolve: (data: any) => {
+              clearTimeout(timeout);
+              resolve(data);
+            }, 
+            reject: (error: any) => {
+              clearTimeout(timeout);
+              reject(error);
+            },
+            timestamp: Date.now()
+          });
+
+          // Listen for expected response type
+          const responseHandler = (data: any) => {
+            const pending = this.pendingMessages.get(messageId);
+            if (pending) {
+              this.pendingMessages.delete(messageId);
+              const responseTime = Date.now() - pending.timestamp;
+              this.updateAverageResponseTime(responseTime);
+              pending.resolve(data);
+              this.removeListener(expectedResponseType, responseHandler);
+            }
+          };
+
+          this.once(expectedResponseType, responseHandler);
+          this.sendMessage(messageWithId);
+        });
+
+        return response;
+      } catch (error) {
+        if (attempt < retries) {
+          logger.warn({ attempt, messageId, error: error instanceof Error ? error.message : String(error) }, 'Retrying message');
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay * (attempt + 1)));
+        } else {
+          this.metrics.errors++;
+          throw error;
+        }
+      }
+    }
+  }
+
+  /**
+   * Queue message for later processing
+   */
+  queueMessage(message: Record<string, any>): boolean {
+    if (this.messageQueue.length >= this.config.messageQueueSize) {
+      logger.warn('Message queue full, dropping oldest message');
+      this.messageQueue.shift();
+    }
+    
+    this.messageQueue.push({ message, timestamp: Date.now() });
+    return true;
+  }
+
+  /**
+   * Process queued messages
+   */
+  async processQueue(): Promise<void> {
+    while (this.messageQueue.length > 0 && this.connected) {
+      const item = this.messageQueue.shift();
+      if (item) {
+        try {
+          this.sendMessage(item.message);
+          await new Promise(resolve => setTimeout(resolve, 10)); // Small delay between messages
+        } catch (error) {
+          logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Failed to process queued message');
+          // Re-queue if still under limit
+          if (this.messageQueue.length < this.config.messageQueueSize) {
+            this.messageQueue.push(item);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Get current metrics
+   */
+  getMetrics(): MessageMetrics {
+    return { ...this.metrics };
+  }
+
+  /**
+   * Reset metrics
+   */
+  resetMetrics(): void {
+    this.metrics = {
+      messagesSent: 0,
+      messagesReceived: 0,
+      errors: 0,
+      averageResponseTime: 0,
+      lastMessageTime: 0
+    };
+  }
+
+  /**
+   * Update average response time
+   */
+  private updateAverageResponseTime(newResponseTime: number): void {
+    const totalMessages = this.metrics.messagesSent;
+    if (totalMessages === 0) {
+      this.metrics.averageResponseTime = newResponseTime;
+    } else {
+      this.metrics.averageResponseTime = 
+        (this.metrics.averageResponseTime * (totalMessages - 1) + newResponseTime) / totalMessages;
     }
   }
   
@@ -162,6 +313,7 @@ export class GreenletBridgeAdapter extends EventEmitter {
   private handleMessage(message: Record<string, any>): void {
     const { type, data } = message;
     
+    this.metrics.messagesReceived++;
     logger.debug({ type, data }, 'Greenlet message received');
     this.emit(type, data);
     this.emit('message', message);

@@ -4,6 +4,12 @@
 - **Tools**: list_agents, describe_agent, open_session, close_session, invoke_agent, handoff, cancel, get_status
 - **Transport**: MCP stdio (for Claude/clients), plus high-performance WebSocket side-channel for streaming
 - **Greenlet Agents**: Python-based lightweight cooperative multitasking agents with ~4KB memory footprint
+  - **Message Queuing**: Built-in message queue with configurable size
+  - **Retry Logic**: Automatic retry with exponential backoff for failed operations
+  - **Metrics Collection**: Real-time performance metrics and monitoring
+  - **Load Balancing**: Multiple strategies (round-robin, least-busy, random)
+  - **Worker Recycling**: Automatic worker recycling to prevent memory leaks
+  - **Health Checks**: Periodic health monitoring with auto-restart
 
 ## Quickstart
 

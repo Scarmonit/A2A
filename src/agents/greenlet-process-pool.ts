@@ -21,12 +21,17 @@ export interface GreenletProcessPoolConfig {
   scriptPath?: string;
   healthCheckInterval?: number;
   restartOnFailure?: boolean;
+  workerRecycleInterval?: number;
+  maxMessagesPerWorker?: number;
+  loadBalancingStrategy?: 'round-robin' | 'least-busy' | 'random';
 }
 
 interface WorkerInfo {
   adapter: GreenletBridgeAdapter;
   healthy: boolean;
   lastHealthCheck: number;
+  messagesProcessed: number;
+  createdAt: number;
 }
 
 export interface PoolStats {
@@ -34,6 +39,18 @@ export interface PoolStats {
   available: number;
   busy: number;
   healthy: number;
+  totalMessagesProcessed: number;
+  averageWorkerAge: number;
+  oldestWorker: number;
+}
+
+export interface DetailedPoolStats extends PoolStats {
+  workers: Array<{
+    id: string;
+    healthy: boolean;
+    messagesProcessed: number;
+    age: number;
+  }>;
 }
 
 export class GreenletProcessPool extends EventEmitter {
@@ -42,7 +59,9 @@ export class GreenletProcessPool extends EventEmitter {
   private availableWorkers: string[] = [];
   private nextWorkerId: number = 0;
   private healthCheckTimer: NodeJS.Timeout | null = null;
+  private recycleTimer: NodeJS.Timeout | null = null;
   private shuttingDown: boolean = false;
+  private totalMessagesProcessed: number = 0;
 
   constructor(config: GreenletProcessPoolConfig = {}) {
     super();
@@ -54,6 +73,9 @@ export class GreenletProcessPool extends EventEmitter {
       scriptPath: config.scriptPath || 'src/agents/python/greenlet_a2a_agent.py',
       healthCheckInterval: config.healthCheckInterval ?? 30000, // 30s
       restartOnFailure: config.restartOnFailure ?? true,
+      workerRecycleInterval: config.workerRecycleInterval ?? 3600000, // 1 hour
+      maxMessagesPerWorker: config.maxMessagesPerWorker ?? 10000,
+      loadBalancingStrategy: config.loadBalancingStrategy ?? 'least-busy',
     };
   }
   
@@ -78,6 +100,11 @@ export class GreenletProcessPool extends EventEmitter {
     this.healthCheckTimer = setInterval(() => {
       this.performHealthChecks();
     }, this.config.healthCheckInterval);
+    
+    // Start worker recycle timer
+    this.recycleTimer = setInterval(() => {
+      this.recycleOldWorkers();
+    }, this.config.workerRecycleInterval);
     
     logger.info({ workers: this.workers.size }, 'Greenlet process pool started');
   }
@@ -104,7 +131,9 @@ export class GreenletProcessPool extends EventEmitter {
       this.workers.set(workerId, {
         adapter,
         healthy: true,
-        lastHealthCheck: Date.now()
+        lastHealthCheck: Date.now(),
+        messagesProcessed: 0,
+        createdAt: Date.now()
       });
       
       this.availableWorkers.push(workerId);
@@ -124,22 +153,73 @@ export class GreenletProcessPool extends EventEmitter {
   }
   
   /**
-   * Get an available worker from the pool
+   * Get an available worker from the pool with load balancing
    */
   async getWorker(): Promise<GreenletBridgeAdapter> {
     if (this.availableWorkers.length === 0) {
       // Try to add a new worker if under max
       if (this.workers.size < this.config.maxWorkers) {
         const workerId = await this.addWorker();
-        return this.workers.get(workerId)!.adapter;
+        const worker = this.workers.get(workerId)!;
+        worker.messagesProcessed++;
+        this.totalMessagesProcessed++;
+        return worker.adapter;
       }
       
       throw new Error('No available workers and max workers reached');
     }
     
-    // Round-robin allocation
-    const workerId = this.availableWorkers.shift()!;
-    return this.workers.get(workerId)!.adapter;
+    // Apply load balancing strategy
+    let workerId: string;
+    
+    switch (this.config.loadBalancingStrategy) {
+      case 'least-busy':
+        workerId = this.getLeastBusyWorker();
+        break;
+      case 'random':
+        const randomIndex = Math.floor(Math.random() * this.availableWorkers.length);
+        workerId = this.availableWorkers.splice(randomIndex, 1)[0];
+        break;
+      case 'round-robin':
+      default:
+        workerId = this.availableWorkers.shift()!;
+        break;
+    }
+    
+    const worker = this.workers.get(workerId)!;
+    worker.messagesProcessed++;
+    this.totalMessagesProcessed++;
+    
+    // Check if worker needs recycling
+    if (worker.messagesProcessed >= this.config.maxMessagesPerWorker) {
+      logger.info({ workerId, messagesProcessed: worker.messagesProcessed }, 'Worker reached message limit, scheduling recycle');
+      setImmediate(() => this.recycleWorker(workerId));
+    }
+    
+    return worker.adapter;
+  }
+
+  /**
+   * Get least busy worker
+   */
+  private getLeastBusyWorker(): string {
+    let leastBusyId = this.availableWorkers[0];
+    let leastMessages = this.workers.get(leastBusyId)?.messagesProcessed ?? Infinity;
+    
+    for (const workerId of this.availableWorkers) {
+      const worker = this.workers.get(workerId);
+      if (worker && worker.messagesProcessed < leastMessages) {
+        leastMessages = worker.messagesProcessed;
+        leastBusyId = workerId;
+      }
+    }
+    
+    const index = this.availableWorkers.indexOf(leastBusyId);
+    if (index > -1) {
+      this.availableWorkers.splice(index, 1);
+    }
+    
+    return leastBusyId;
   }
   
   /**
@@ -189,6 +269,11 @@ export class GreenletProcessPool extends EventEmitter {
       this.healthCheckTimer = null;
     }
     
+    if (this.recycleTimer) {
+      clearInterval(this.recycleTimer);
+      this.recycleTimer = null;
+    }
+    
     logger.info('Shutting down greenlet process pool');
     
     const shutdownPromises: Promise<void>[] = [];
@@ -204,12 +289,83 @@ export class GreenletProcessPool extends EventEmitter {
    * Get pool statistics
    */
   getStats(): PoolStats {
+    const workers = Array.from(this.workers.values());
+    const now = Date.now();
+    const totalAge = workers.reduce((sum, w) => sum + (now - w.createdAt), 0);
+    const oldestWorkerAge = workers.length > 0 ? Math.max(...workers.map(w => now - w.createdAt)) : 0;
+    
     return {
       total: this.workers.size,
       available: this.availableWorkers.length,
       busy: this.workers.size - this.availableWorkers.length,
-      healthy: Array.from(this.workers.values()).filter(w => w.healthy).length
+      healthy: workers.filter(w => w.healthy).length,
+      totalMessagesProcessed: this.totalMessagesProcessed,
+      averageWorkerAge: workers.length > 0 ? totalAge / workers.length : 0,
+      oldestWorker: oldestWorkerAge
     };
+  }
+
+  /**
+   * Get detailed pool statistics
+   */
+  getDetailedStats(): DetailedPoolStats {
+    const basicStats = this.getStats();
+    const now = Date.now();
+    
+    const workers = Array.from(this.workers.entries()).map(([id, info]) => ({
+      id,
+      healthy: info.healthy,
+      messagesProcessed: info.messagesProcessed,
+      age: now - info.createdAt
+    }));
+    
+    return {
+      ...basicStats,
+      workers
+    };
+  }
+
+  /**
+   * Recycle old workers to prevent memory leaks
+   */
+  private async recycleOldWorkers(): Promise<void> {
+    if (this.shuttingDown) return;
+    
+    const now = Date.now();
+    const workersToRecycle: string[] = [];
+    
+    for (const [workerId, worker] of this.workers.entries()) {
+      const age = now - worker.createdAt;
+      
+      // Recycle workers older than recycle interval
+      if (age > this.config.workerRecycleInterval) {
+        workersToRecycle.push(workerId);
+      }
+    }
+    
+    for (const workerId of workersToRecycle) {
+      // Only recycle if we're above minimum workers
+      if (this.workers.size > this.config.minWorkers) {
+        logger.info({ workerId }, 'Recycling old worker');
+        await this.recycleWorker(workerId);
+      }
+    }
+  }
+
+  /**
+   * Recycle a specific worker
+   */
+  private async recycleWorker(workerId: string): Promise<void> {
+    try {
+      await this.removeWorker(workerId);
+      
+      // Add a new worker if we're below minimum
+      if (this.workers.size < this.config.minWorkers && !this.shuttingDown) {
+        await this.addWorker();
+      }
+    } catch (error) {
+      logger.error({ workerId, error: error instanceof Error ? error.message : String(error) }, 'Failed to recycle worker');
+    }
   }
   
   /**
