@@ -1,0 +1,70 @@
+# Prometheus Configuration for A2A MCP Dashboard
+# Real-time monitoring and metrics collection
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'a2a-mcp'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  # - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # A2A MCP Server metrics
+  - job_name: 'a2a-mcp-server'
+    static_configs:
+      - targets: ['a2a-mcp-server:9090']
+        labels:
+          service: 'mcp-server'
+          component: 'backend'
+    metrics_path: '/api/dashboard/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Dashboard API metrics
+  - job_name: 'a2a-dashboard-api'
+    static_configs:
+      - targets: ['a2a-mcp-server:3000']
+        labels:
+          service: 'dashboard'
+          component: 'api'
+    metrics_path: '/api/dashboard/metrics'
+    scrape_interval: 15s
+
+  # WebSocket server metrics
+  - job_name: 'a2a-websocket'
+    static_configs:
+      - targets: ['a2a-dashboard-ws:8081']
+        labels:
+          service: 'websocket'
+          component: 'realtime'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Node exporter for system metrics (optional)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          component: 'system'
+    scrape_interval: 30s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'

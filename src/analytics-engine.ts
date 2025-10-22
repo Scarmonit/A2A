@@ -468,7 +468,7 @@ export class AnalyticsEngine {
           promMetric = new Gauge({
             name: metric.name,
             help: metric.help,
-            labelNames: metric.labels,
+            labelNames: metric.labels || [],
             registers: [this.registry]
           });
           break;
