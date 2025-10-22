@@ -63,12 +63,11 @@ export class AnalyticsEngine {
   track(event: Omit<AnalyticsEvent, 'timestamp'>): void {
     try {
       const analyticsEvent: AnalyticsEvent = { ...event, timestamp: Date.now() }
-      const sampleRate = Number(process.env.ANALYTICS_SAMPLE_RATE || 1)
-      if (sampleRate < 1 && Math.random() > sampleRate) { this.updateMetrics(analyticsEvent); this.updateRealtime(analyticsEvent); return }
-      this.events.push(analyticsEvent)
+      const keep = this.sampleRate >= 1 || Math.random() <= this.sampleRate
+      if (keep) this.events.push(analyticsEvent)
       this.updateMetrics(analyticsEvent)
       this.updateRealtime(analyticsEvent)
-      logger.debug({ eventType: event.eventType, agentId: event.agentId, dataSize: Object.keys(event.data || {}).length }, 'Analytics event tracked')
+      logger.debug({ eventType: event.eventType, agentId: event.agentId, sampled: !keep, dataSize: Object.keys(event.data || {}).length }, 'Analytics event processed')
     } catch (err) { logger.warn({ err }, 'Failed to track analytics event') }
   }
   trackAgentExecution(params: { agentId: string; requestId: string; capability: string; success: boolean; executionTime: number; toolsUsed: string[]; errorType?: string; userId?: string; platform?: string }): void {
@@ -79,17 +78,30 @@ export class AnalyticsEngine {
   }
   query(query: AnalyticsQuery): { data: any[]; metadata: { totalCount: number; timeRange: { start: number; end: number }; groupedBy?: string[] } } {
     const all = this.events.toArray()
-    let filteredEvents = all.filter(e => e.timestamp >= query.timeRange.start && e.timestamp <= query.timeRange.end)
-    if (query.filters) {
-      if (query.filters.agentId) filteredEvents = filteredEvents.filter(e => e.agentId === query.filters!.agentId)
-      if (query.filters.eventType) filteredEvents = filteredEvents.filter(e => e.eventType === query.filters!.eventType)
-      if (query.filters.userId) filteredEvents = filteredEvents.filter(e => e.userId === query.filters!.userId)
-      if (query.filters.tags) filteredEvents = filteredEvents.filter(e => Object.entries(query.filters!.tags!).every(([k, v]) => e.tags?.[k] === v))
+    if (all.length === 0) return { data: [], metadata: { totalCount: 0, timeRange: query.timeRange, groupedBy: query.groupBy } }
+    const { start, end } = query.timeRange
+    const out: AnalyticsEvent[] = []
+    const maxScan = Math.min(all.length, this.maxQueryScan)
+    for (let i = all.length - 1, scanned = 0; i >= 0 && scanned < maxScan; i--, scanned++) {
+      const e = all[i]; if (!e) continue
+      if (e.timestamp < start) break
+      if (e.timestamp > end) continue
+      if (query.filters) {
+        const f = query.filters
+        if (f.agentId && e.agentId !== f.agentId) continue
+        if (f.eventType && e.eventType !== f.eventType) continue
+        if (f.userId && e.userId !== f.userId) continue
+        if (f.tags && !Object.entries(f.tags).every(([k, v]) => e.tags?.[k] === v)) continue
+      }
+      out.push(e)
     }
-    let result: any = filteredEvents
-    if (query.groupBy && query.groupBy.length > 0) { const grouped = this.groupEvents(filteredEvents, query.groupBy); result = Object.entries(grouped).map(([key, events]) => ({ key, count: events.length, events: query.limit ? events.slice(0, query.limit) : events })) }
+    let result: any = out
+    if (query.groupBy && query.groupBy.length > 0) {
+      const grouped = this.groupEvents(out, query.groupBy)
+      result = Object.entries(grouped).map(([key, events]) => ({ key, count: events.length, events: query.limit ? events.slice(0, query.limit) : events }))
+    }
     if (query.limit && !query.groupBy) result = result.slice(0, query.limit)
-    return { data: result, metadata: { totalCount: filteredEvents.length, timeRange: query.timeRange, groupedBy: query.groupBy } }
+    return { data: result, metadata: { totalCount: out.length, timeRange: query.timeRange, groupedBy: query.groupBy } }
   }
   generateInsights(timeRange: { start: number; end: number }): AnalyticsInsight[] {
     const events = this.events.toArray().filter(e => e.timestamp >= timeRange.start && e.timestamp <= timeRange.end)
@@ -97,14 +109,18 @@ export class AnalyticsEngine {
     const agentExecutions = events.filter(e => e.eventType === 'agent_execution')
     if (agentExecutions.length > 0) {
       const errorRate = agentExecutions.filter(e => !e.data.success).length / agentExecutions.length
-      if (errorRate > 0.1) { insights.push({ type: 'threshold', severity: errorRate > 0.3 ? 'critical' : 'warning', title: 'High Error Rate Detected', description: `Agent execution error rate is ${(errorRate * 100).toFixed(1)}%`, data: { errorRate, totalExecutions: agentExecutions.length }, recommendations: ['Review agent configurations', 'Check system resources', 'Analyze error patterns'], confidence: 0.9 }) }
+      if (errorRate > 0.1) {
+        insights.push({ type: 'threshold', severity: errorRate > 0.3 ? 'critical' : 'warning', title: 'High Error Rate Detected', description: `Agent execution error rate is ${(errorRate * 100).toFixed(1)}%`, data: { errorRate, totalExecutions: agentExecutions.length }, recommendations: ['Review agent configurations', 'Check system resources', 'Analyze error patterns'], confidence: 0.9 })
+      }
     }
     const executionTimes = agentExecutions.map(e => e.data.executionTime as number).filter(t => typeof t === 'number')
     if (executionTimes.length > 10) {
       const avgExecutionTime = executionTimes.reduce((a, b) => a + b, 0) / executionTimes.length
       const recentExecutions = agentExecutions.slice(-Math.ceil(agentExecutions.length * 0.3))
       const recentAvgTime = recentExecutions.map(e => e.data.executionTime as number).reduce((a, b) => a + b, 0) / recentExecutions.length
-      if (recentAvgTime > avgExecutionTime * 1.5) { insights.push({ type: 'trend', severity: 'warning', title: 'Performance Degradation Trend', description: `Recent executions are 50% slower than average (${recentAvgTime.toFixed(0)}ms vs ${avgExecutionTime.toFixed(0)}ms)`, data: { avgExecutionTime, recentAvgTime, degradation: (recentAvgTime / avgExecutionTime - 1) * 100 }, recommendations: ['Scale up resources', 'Optimize agent code', 'Check for resource contention'], confidence: 0.8 }) }
+      if (recentAvgTime > avgExecutionTime * 1.5) {
+        insights.push({ type: 'trend', severity: 'warning', title: 'Performance Degradation Trend', description: `Recent executions are 50% slower than average (${recentAvgTime.toFixed(0)}ms vs ${avgExecutionTime.toFixed(0)}ms)`, data: { avgExecutionTime, recentAvgTime, degradation: (recentAvgTime / avgExecutionTime - 1) * 100 }, recommendations: ['Scale up resources', 'Optimize agent code', 'Check for resource contention'], confidence: 0.8 })
+      }
     }
     const byPlatform = this.groupEvents(agentExecutions, ['platform'])
     Object.entries(byPlatform).forEach(([platform, evts]) => {
@@ -145,9 +161,7 @@ export class AnalyticsEngine {
         this.last5mCounters.agentExec--
         if (old.success) this.last5mCounters.successes--
         if (old.execTime) this.last5mCounters.execTimeSum -= old.execTime
-      } else {
-        this.last5mCounters.workflowExec--
-      }
+      } else { this.last5mCounters.workflowExec-- }
     }
     const active = new Set<string>()
     for (const p of this.last5mWindow) if (p.agentId) active.add(p.agentId)
@@ -168,7 +182,7 @@ export class AnalyticsEngine {
       { name: 'a2a_active_agents', help: 'Number of active agents', type: 'gauge' }
     ]
     metrics.forEach(metric => {
-      let promMetric
+      let promMetric: any
       switch (metric.type) {
         case 'counter':
           promMetric = new Counter({ name: metric.name, help: metric.help, labelNames: metric.labels, registers: [this.registry] })
