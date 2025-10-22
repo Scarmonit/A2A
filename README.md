@@ -14,6 +14,99 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 - **Handoff Support**: Seamless agent-to-agent handoffs
 - **Status Tracking**: Real-time status monitoring and cancellation
 - **Idempotency**: Built-in support for idempotent operations
+- **Parallel Command Execution**: Execute multiple commands concurrently using execa
+
+## Parallel Command Execution
+
+The A2A server includes a powerful parallel command executor built with [execa](https://github.com/sindresorhus/execa), enabling you to run multiple commands concurrently using Promise.all.
+
+### Features
+
+- Execute multiple commands in parallel with Promise.all
+- Script-style interface for running named commands
+- NPM script parallel execution
+- Detailed result reporting (stdout, stderr, exit codes, duration)
+- Built-in error handling and timeout support
+
+### Usage Examples
+
+#### Example 1: Run Multiple Commands in Parallel
+
+```typescript
+import { executeParallel } from './src/parallel-executor';
+
+const commands = [
+  { command: 'npm', args: ['run', 'build'] },
+  { command: 'npm', args: ['run', 'test'] },
+  { command: 'npm', args: ['run', 'lint'] }
+];
+
+const results = await executeParallel(commands);
+console.log(`Completed ${results.filter(r => r.success).length}/${results.length} commands`);
+```
+
+#### Example 2: Run NPM Scripts in Parallel
+
+```typescript
+import { executeNpmScripts } from './src/parallel-executor';
+
+// Run multiple npm scripts concurrently
+const results = await executeNpmScripts(['build', 'test', 'lint']);
+```
+
+#### Example 3: Run Named Scripts with Script Interface
+
+```typescript
+import { executeScripts } from './src/parallel-executor';
+
+const scripts = {
+  'build': 'npm run build',
+  'test': 'npm run test',
+  'lint': 'eslint src/**/*.ts'
+};
+
+const results = await executeScripts(scripts);
+console.log('Build result:', results.build.success);
+console.log('Test result:', results.test.success);
+```
+
+#### Example 4: Advanced Configuration
+
+```typescript
+import { executeParallel, CommandConfig } from './src/parallel-executor';
+
+const commands: CommandConfig[] = [
+  {
+    command: 'npm',
+    args: ['run', 'build'],
+    options: {
+      cwd: './packages/core',
+      env: { NODE_ENV: 'production' }
+    }
+  },
+  {
+    command: 'npm',
+    args: ['test'],
+    options: {
+      cwd: './packages/utils'
+    }
+  }
+];
+
+const results = await executeParallel(commands);
+results.forEach(result => {
+  console.log(`Command: ${result.command}`);
+  console.log(`Duration: ${result.duration}ms`);
+  console.log(`Success: ${result.success}`);
+});
+```
+
+### Benefits of Parallel Execution
+
+- **Faster CI/CD**: Run build, test, and lint tasks concurrently
+- **Improved Development**: Execute multiple dev servers simultaneously
+- **Efficient Testing**: Run test suites in parallel across packages
+- **Better Resource Utilization**: Maximize CPU and I/O usage
 
 ## Tools
 
@@ -68,35 +161,54 @@ The server will start with:
 ```bash
 # Build and start
 npm run build
-npm run start
+npm start
 ```
 
-### Testing Locally
+## Usage
 
-1. Start the server:
-   ```bash
-   npm run dev
-   ```
+### With Claude Desktop
 
-2. Connect a WebSocket client to:
-   ```
-   ws://127.0.0.1:8787/stream?requestId=<id>
-   ```
+1. Install and build the server (see Installation)
+2. Add to your Claude Desktop config:
 
-3. Call `invoke_agent` via MCP tool to receive streaming chunks
-
-## Response Format
-
-`invoke_agent` returns:
 ```json
 {
-  "requestId": "uuid",
-  "status": "pending|running|completed|failed",
-  "streamUrl": "ws://..."
+  "mcpServers": {
+    "a2a": {
+      "command": "node",
+      "args": ["/path/to/A2A/dist/index.js"]
+    }
+  }
 }
 ```
 
-Stream events:
+3. Restart Claude Desktop
+
+### WebSocket Client
+
+```typescript
+import WebSocket from 'ws';
+
+const ws = new WebSocket('ws://127.0.0.1:8787');
+
+ws.on('open', () => {
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'list_agents',
+    params: {},
+    id: 1
+  }));
+});
+
+ws.on('message', (data) => {
+  console.log('Received:', data.toString());
+});
+```
+
+## Streaming Protocol
+
+All streaming operations use the following event types:
+
 - `start` - Operation started
 - `chunk` - Data chunk received
 - `final` - Operation completed
@@ -117,7 +229,8 @@ See `.env.example` for required environment variables.
 
 ### Deployment Status
 
-✅ All Railway deployments are healthy and operational  
+✅ All Railway deployments are healthy and operational
+  
 ✅ All services are functioning correctly
 
 ## Documentation
@@ -133,6 +246,7 @@ See `.env.example` for required environment variables.
 ## Contributing
 
 We welcome contributions! Please read our [Contributing Guide](./CONTRIBUTING.md) for details on:
+
 - Code of conduct
 - Development workflow
 - Coding standards
@@ -156,7 +270,9 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 ## Acknowledgments
 
 Built with:
+
 - [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/sdk) - MCP SDK
+- [execa](https://github.com/sindresorhus/execa) - Process execution for parallel commands
 - [ws](https://github.com/websockets/ws) - WebSocket implementation
 - [pino](https://github.com/pinojs/pino) - Structured logging
 - [zod](https://github.com/colinhacks/zod) - Runtime type validation
