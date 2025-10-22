@@ -276,11 +276,18 @@ See `.env.example` for required environment variables.
 
 ## Documentation
 
-- **[GitHub Copilot Integration](./docs/COPILOT_INTEGRATION.md)** - Complete guide for Copilot integration
+### GitHub Copilot Integration
+- **[Feature Overview](./docs/COPILOT_FEATURES.md)** - Visual guide to all capabilities
+- **[Complete Integration Guide](./docs/COPILOT_INTEGRATION.md)** - Full setup, usage, and troubleshooting
+- **[Quick Start (5 min)](./docs/COPILOT_QUICKSTART.md)** - Get started in under 5 minutes
+
+### Deployment & Setup
 - [Quick Deploy Guide](./QUICK_DEPLOY.md) - Fast deployment instructions
 - [Your Deployment Guide](./YOUR_DEPLOYMENT.md) - Custom deployment setup
 - [Ollama Setup](./OLLAMA_SETUP.md) - Ollama integration guide
 - [Free Domains](./FREE_DOMAINS.md) - Free domain options
+
+### Project Guidelines
 - [Contributing](./CONTRIBUTING.md) - Contribution guidelines
 - [Security](./SECURITY.md) - Security policy and reporting
 - [Changelog](./CHANGELOG.md) - Version history
