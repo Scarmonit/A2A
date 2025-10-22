@@ -54,9 +54,13 @@ class RingBuffer<T> {
   private buf: Array<T | undefined>
   private head = 0
   private size = 0
+
   constructor(private capacity: number) { this.buf = new Array(capacity) }
+
   push(item: T) { this.buf[this.head] = item; this.head = (this.head + 1) % this.capacity; if (this.size < this.capacity) this.size++ }
+
   toArray(): T[] { const out: T[] = []; for (let i = 0; i < this.size; i++) { const idx = (this.head - this.size + i + this.capacity) % this.capacity; const v = this.buf[idx]; if (v !== undefined) out.push(v) } return out }
+
   get length() { return this.size }
 }
 
