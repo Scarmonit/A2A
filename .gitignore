@@ -9,3 +9,9 @@ venv/
 *.log
 .env.local
 .DS_Store
+
+# MCP configuration backups
+*.backup
+
+# Generated agent MCP server scripts
+agent-mcp-*.js
