@@ -33,8 +33,7 @@ module.exports = async (req, res) => {
         backend: RAILWAY_BACKEND
       });
     } else if (action === 'proxy') {
-      // Proxy request to Railway backend
-      const fetch = (await import('node-fetch')).default;
+      // Proxy request to Railway backend using native fetch (Node.js 18+)
       const response = await fetch(`${RAILWAY_BACKEND}/healthz`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
