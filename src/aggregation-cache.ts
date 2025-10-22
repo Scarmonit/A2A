@@ -51,8 +51,12 @@ export class AggregationCache {
     custom: 10000          // 10 seconds default
   };
   
-  constructor(maxSize: number = 1000) {
-    this.maxSize = maxSize;
+  /**
+   * @param maxSize Maximum number of entries to keep in cache. Can be overridden by CACHE_MAX_SIZE environment variable.
+   */
+  constructor(maxSize?: number) {
+    const envMax = process.env.CACHE_MAX_SIZE ? parseInt(process.env.CACHE_MAX_SIZE, 10) : undefined;
+    this.maxSize = maxSize ?? envMax ?? 1000;
     this.startCleanupJobs();
   }
   

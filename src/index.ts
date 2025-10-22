@@ -10,6 +10,7 @@ import { advancedToolRegistry } from './advanced-tools.js';
 import { permissionManager } from './permissions.js';
 import { agentMCPManager } from './agent-mcp-servers.js';
 import { StreamHub } from './streaming.js';
+import { registerSelfImprovementTools } from './self-improvement-tools.js';
 import { setTimeout as sleep } from 'timers/promises';
 import pino from 'pino';
 import * as http from 'http';
@@ -864,6 +865,9 @@ if (METRICS_PORT > 0) {
   });
   srv.listen(METRICS_PORT, () => logger.info({ port: METRICS_PORT }, 'metrics server listening'));
 }
+
+// Register self-improvement tools for autonomous enhancement
+registerSelfImprovementTools();
 
 // Expose over stdio for MCP clients; streaming is available via WebSocket side-channel
 await server.connect(new StdioServerTransport());

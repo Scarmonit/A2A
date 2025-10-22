@@ -41,7 +41,7 @@ services:
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('net').connect(8081).on('connect', () => process.exit(0))"]
+      test: ["CMD", "nc", "-z", "localhost", "8081"]
       interval: 30s
       timeout: 10s
       retries: 3

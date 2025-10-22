@@ -45,14 +45,16 @@ export class MCPServerMonitor {
   private toolCalls: ToolCall[] = [];
   private resourceAccesses: ResourceAccess[] = [];
   private permissionRequests: PermissionRequest[] = [];
-  private maxHistorySize = 10000;
+  private maxHistorySize: number;
   
   // Anomaly detection thresholds
   private readonly HIGH_FREQUENCY_THRESHOLD = 100; // calls per minute
   private readonly HIGH_ERROR_RATE_THRESHOLD = 0.2; // 20% error rate
   private readonly HIGH_LATENCY_THRESHOLD = 5000; // 5 seconds
   
-  constructor() {
+  constructor(maxHistorySize?: number) {
+    const envMax = process.env.MCP_MONITOR_MAX_HISTORY_SIZE ? parseInt(process.env.MCP_MONITOR_MAX_HISTORY_SIZE, 10) : undefined;
+    this.maxHistorySize = maxHistorySize ?? envMax ?? 10000;
     this.startCleanupJobs();
   }
   

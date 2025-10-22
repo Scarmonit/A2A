@@ -424,7 +424,9 @@ export class DashboardWebSocketServer {
 
 // Auto-start if running directly (ES module compatible)
 // Check if this file is being run directly
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+import { fileURLToPath } from 'url';
+import { pathToFileURL } from 'url';
+const isMainModule = import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMainModule) {
   const port = parseInt(process.env.WS_PORT || '8081');
   const server = new DashboardWebSocketServer(port);

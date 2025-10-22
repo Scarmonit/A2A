@@ -485,18 +485,28 @@ export class AnalyticsEngine {
       {
         name: 'a2a_active_agents',
         help: 'Number of active agents',
-        type: 'gauge'
+        type: 'gauge',
+        labels: []
       }
     ];
     
     metrics.forEach(metric => {
+      // Check if metric already exists to avoid conflicts
+      const existing = this.metrics.get(metric.name);
+      if (existing) {
+        logger.debug({ metricName: metric.name }, 'Metric already registered, skipping');
+        return;
+      }
+      
       let promMetric;
+      const labelNames = metric.labels || [];
+      
       switch (metric.type) {
         case 'counter':
           promMetric = new Counter({
             name: metric.name,
             help: metric.help,
-            labelNames: metric.labels,
+            labelNames,
             registers: [this.registry]
           });
           break;
@@ -504,7 +514,7 @@ export class AnalyticsEngine {
           promMetric = new Histogram({
             name: metric.name,
             help: metric.help,
-            labelNames: metric.labels,
+            labelNames,
             buckets: metric.buckets,
             registers: [this.registry]
           });
@@ -513,7 +523,7 @@ export class AnalyticsEngine {
           promMetric = new Gauge({
             name: metric.name,
             help: metric.help,
-            labelNames: metric.labels || [],
+            labelNames,
             registers: [this.registry]
           });
           break;
