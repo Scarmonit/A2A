@@ -4,30 +4,3 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "node --max-old-space-size=1536 --optimize-for-size dist/index.js"
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 3
-
-[[services]]
-name = "a2a-mcp-server"
-
-[services.variables]
-NODE_ENV = "production"
-MAX_CONCURRENCY = "100"
-MAX_QUEUE_SIZE = "50000"
-ENABLE_STREAMING = "true"
-STREAM_PORT = "8787"
-LOG_LEVEL = "info"
-PORT = "8787"
-REQUEST_TIMEOUT = "30000"
-KEEPALIVE_TIMEOUT = "65000"
-
-[services.resources]
-memory = 2048
-cpu = 2000
-
-[services.healthcheck]
-path = "/healthz"
-port = 8787
-interval = 30
-timeout = 10
-retries = 3
