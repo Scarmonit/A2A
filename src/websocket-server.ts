@@ -48,7 +48,7 @@ export class DashboardWebSocketServer {
   }
 
   private initialize(): void {
-    this.wss.on('connection', (ws: WebSocket, re: anyq) => {
+    this.wss.on('connection', (ws: WebSocket, re: any) => {
       const clientId = this.generateClientId();
       const client: DashboardClient = {
         ws,
