@@ -2,31 +2,32 @@
 # This file defines individuals or teams that are responsible for code in this repository.
 # Code owners are automatically requested for review when someone opens a pull request 
 # that modifies code that they own.
+# NOTE: CODEOWNERS controls review requests and is not a permission system.
 
 # Default owners for everything in the repo
-* @Scarmonit
+* @Scarmonit @copilot
 
 # GitHub Actions workflows
-/.github/ @Scarmonit
+/.github/ @Scarmonit @copilot
 
 # Core source code
-/src/ @Scarmonit
+/src/ @Scarmonit @copilot
 
 # Configuration files
-*.json @Scarmonit
-*.yml @Scarmonit
-*.yaml @Scarmonit
-*.toml @Scarmonit
+*.json @Scarmonit @copilot
+*.yml @Scarmonit @copilot
+*.yaml @Scarmonit @copilot
+*.toml @Scarmonit @copilot
 
 # Documentation
-*.md @Scarmonit
+*.md @Scarmonit @copilot
 
 # Deployment configurations
-/deploy*.* @Scarmonit
-/Dockerfile @Scarmonit
-/docker-compose.yml @Scarmonit
+/deploy*.* @Scarmonit @copilot
+/Dockerfile @Scarmonit @copilot
+/docker-compose.yml @Scarmonit @copilot
 
 # Scripts
-/scripts/ @Scarmonit
-*.sh @Scarmonit
-*.ps1 @Scarmonit
+/scripts/ @Scarmonit @copilot
+*.sh @Scarmonit @copilot
+*.ps1 @Scarmonit @copilot
