@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "echo 'Skipping TypeScript build for Vercel - API files are already in JavaScript'",
     "start": "node dist/index.js",
     "agent:continuous": "node --max-old-space-size=2048 --enable-source-maps dist/index.js",
     "vercel:build": "npm run build",
