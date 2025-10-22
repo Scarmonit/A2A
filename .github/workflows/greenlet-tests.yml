@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test-python:
     name: Python Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
@@ -34,6 +39,8 @@ jobs:
   test-nodejs:
     name: Node.js Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         node-version: ['18.x', '20.x', '22.x']
@@ -60,6 +67,8 @@ jobs:
   test-integration:
     name: Integration Tests (Python + Node.js)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ['3.11']
