@@ -330,12 +330,26 @@
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             
-            let content = `<span class="log-time">[${time}]</span><span class="log-type ${type}">${type.toUpperCase()}</span>${message}`;
+            // Create elements to prevent XSS
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'log-time';
+            timeSpan.textContent = `[${time}]`;
+            
+            const typeSpan = document.createElement('span');
+            typeSpan.className = `log-type ${type}`;
+            typeSpan.textContent = type.toUpperCase();
+            
+            const messageText = document.createTextNode(message);
+            
+            entry.appendChild(timeSpan);
+            entry.appendChild(typeSpan);
+            entry.appendChild(messageText);
+            
             if (data) {
-                content += `\n${JSON.stringify(data, null, 2)}`;
+                const dataText = document.createTextNode('\n' + JSON.stringify(data, null, 2));
+                entry.appendChild(dataText);
             }
             
-            entry.innerHTML = content;
             logsEl.appendChild(entry);
             logsEl.scrollTop = logsEl.scrollHeight;
         }
@@ -370,16 +384,32 @@
                 const trendText = trends.requestRate.trend;
                 const change = trends.requestRate.change;
                 const trendIcon = trendText === 'up' ? '📈' : trendText === 'down' ? '📉' : '➡️';
-                document.getElementById('request-trend').innerHTML = 
-                    `${trendIcon} <span class="trend ${trendText}">${change.toFixed(1)}%</span>`;
+                
+                // Safely update with sanitized values
+                const trendEl = document.getElementById('request-trend');
+                trendEl.textContent = ''; // Clear
+                trendEl.appendChild(document.createTextNode(trendIcon + ' '));
+                
+                const span = document.createElement('span');
+                span.className = `trend ${trendText}`;
+                span.textContent = `${change.toFixed(1)}%`;
+                trendEl.appendChild(span);
             }
             
             if (trends.performance) {
                 const trendText = trends.performance.trend;
                 const change = trends.performance.change;
                 const trendIcon = trendText === 'up' ? '📈' : trendText === 'down' ? '📉' : '➡️';
-                document.getElementById('perf-trend').innerHTML = 
-                    `${trendIcon} <span class="trend ${trendText}">${change.toFixed(1)}%</span>`;
+                
+                // Safely update with sanitized values
+                const trendEl = document.getElementById('perf-trend');
+                trendEl.textContent = ''; // Clear
+                trendEl.appendChild(document.createTextNode(trendIcon + ' '));
+                
+                const span = document.createElement('span');
+                span.className = `trend ${trendText}`;
+                span.textContent = `${change.toFixed(1)}%`;
+                trendEl.appendChild(span);
             }
         }
         
