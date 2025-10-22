@@ -51,7 +51,7 @@ export class GreenletProcessPool extends EventEmitter {
       minWorkers: config.minWorkers ?? 2,
       maxWorkers: config.maxWorkers ?? 10,
       pythonPath: config.pythonPath || 'python3',
-      scriptPath: config.scriptPath || 'src/agents/python/greenlet-a2a-agent.py',
+      scriptPath: config.scriptPath || 'src/agents/python/greenlet_a2a_agent.py',
       healthCheckInterval: config.healthCheckInterval ?? 30000, // 30s
       restartOnFailure: config.restartOnFailure ?? true,
     };

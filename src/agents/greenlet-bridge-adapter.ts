@@ -30,7 +30,7 @@ export class GreenletBridgeAdapter extends EventEmitter {
     
     this.config = {
       pythonPath: config.pythonPath || 'python3',
-      scriptPath: config.scriptPath || 'src/agents/python/greenlet-a2a-agent.py',
+      scriptPath: config.scriptPath || 'src/agents/python/greenlet_a2a_agent.py',
       agentId: config.agentId || 'greenlet-agent',
       capabilities: config.capabilities || [],
       timeout: config.timeout || 30000,
