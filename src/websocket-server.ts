@@ -430,5 +430,7 @@ export class DashboardWebSocketServer {
       connectedClients: this.clients.size,
       metricsHistorySize: this.metricsHistory.length,
       uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      // aggregate backpressure for
+      memory: process.memoryUsage()
+    };
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://github.com/modelcontextprotocol/specification/blob/main/schema/mcp-config-schema.json",
+  "mcpServers": {
+    "a2a-agent-server": {
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/index.js"],
+      "env": {
+        "ENABLE_STREAMING": "true",
+        "STREAM_PORT": "8787",
+        "STREAM_HOST": "127.0.0.1",
+        "MAX_CONCURRENCY": "50",
+        "MAX_QUEUE_SIZE": "10000",
+        "LOG_LEVEL": "info"
+      },
+      "disabled": false,
+      "description": "A2A MCP Server - Agent-to-Agent communication with WebSocket streaming",
+      "settings": {
+        "capabilities": [
+          "agent_control",
+          "enhanced_agents",
+          "advanced_tools",
+          "practical_tools",
+          "permission_management",
+          "mcp_server_management"
+        ]
+      }
+    }
+  }
+}
