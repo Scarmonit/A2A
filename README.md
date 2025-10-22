@@ -166,6 +166,47 @@ npm start
 
 ## Usage
 
+### With GitHub Copilot
+
+GitHub Copilot can integrate with A2A to leverage advanced agent capabilities directly in your development workflow.
+
+**Quick Setup:**
+
+1. Build the A2A server:
+   ```bash
+   npm install && npm run build
+   ```
+
+2. Configure VS Code (add to `.vscode/settings.json` or user settings):
+   ```json
+   {
+     "github.copilot.advanced": {
+       "mcpServers": {
+         "a2a-agent-server": {
+           "command": "node",
+           "args": ["${workspaceFolder}/dist/index.js"],
+           "env": {
+             "ENABLE_STREAMING": "true",
+             "STREAM_PORT": "8787",
+             "LOG_LEVEL": "info"
+           }
+         }
+       }
+     }
+   }
+   ```
+
+3. Reload VS Code window
+
+**What Copilot Can Do With A2A:**
+- Deploy and manage specialized agents (web scraping, content creation, data analysis)
+- Execute parallel commands (build, test, lint concurrently)
+- Perform advanced file operations and automation
+- Manage cloud infrastructure and deployments
+- Real-time streaming for live updates
+
+📖 **[Complete GitHub Copilot Integration Guide](./docs/COPILOT_INTEGRATION.md)**
+
 ### With Claude Desktop
 
 1. Install and build the server (see Installation)
@@ -235,6 +276,7 @@ See `.env.example` for required environment variables.
 
 ## Documentation
 
+- **[GitHub Copilot Integration](./docs/COPILOT_INTEGRATION.md)** - Complete guide for Copilot integration
 - [Quick Deploy Guide](./QUICK_DEPLOY.md) - Fast deployment instructions
 - [Your Deployment Guide](./YOUR_DEPLOYMENT.md) - Custom deployment setup
 - [Ollama Setup](./OLLAMA_SETUP.md) - Ollama integration guide

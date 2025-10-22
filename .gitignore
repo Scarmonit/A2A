@@ -9,3 +9,7 @@ venv/
 *.log
 .env.local
 .DS_Store
+
+# VS Code settings (user-specific)
+.vscode/settings.json
+.vscode/*.code-workspace
