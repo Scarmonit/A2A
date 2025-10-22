@@ -1,0 +1,199 @@
+name: Release Automation
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  check-release:
+    name: Check Release Eligibility
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      release_type: ${{ steps.check.outputs.release_type }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check for releasable changes
+        id: check
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tags found, creating initial release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=minor" >> $GITHUB_OUTPUT
+            echo "version=0.1.0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check commit messages for conventional commits
+          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s")
+          
+          # Check for breaking changes
+          if echo "$COMMITS" | grep -q "BREAKING CHANGE"; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=major" >> $GITHUB_OUTPUT
+          # Check for features
+          elif echo "$COMMITS" | grep -q "^feat"; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=minor" >> $GITHUB_OUTPUT
+          # Check for fixes
+          elif echo "$COMMITS" | grep -q "^fix"; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=patch" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "No releasable changes found"
+          fi
+          
+          # Override if manual trigger
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=${{ inputs.release_type }}" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Bump version
+        id: version
+        run: |
+          # Get current version
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Calculate new version (simplified semver bump)
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          
+          case "${{ needs.check-release.outputs.release_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Update package.json
+          npm version $NEW_VERSION --no-git-tag-version
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            CHANGELOG="Initial release of A2A MCP Server"
+          else
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" | grep -E "^- (feat|fix|perf|docs):")
+          fi
+          
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG.md
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          DATE=$(date +%Y-%m-%d)
+          
+          # Create new changelog entry
+          sed -i "/## \[Unreleased\]/a\\
+          \\
+          ## [$NEW_VERSION] - $DATE\\
+          \\
+          ${{ steps.changelog.outputs.changelog }}" CHANGELOG.md
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore(release): bump version to ${{ steps.version.outputs.new_version }}"
+          git tag -a "v${{ steps.version.outputs.new_version }}" -m "Release v${{ steps.version.outputs.new_version }}"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
+          tags: true
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: 'v${{ steps.version.outputs.new_version }}',
+              name: 'Release v${{ steps.version.outputs.new_version }}',
+              body: `## Changes\n\n${{ steps.changelog.outputs.changelog }}\n\n**Full Changelog**: https://github.com/${context.repo.owner}/${context.repo.repo}/compare/v${{ steps.version.outputs.current_version }}...v${{ steps.version.outputs.new_version }}`,
+              draft: false,
+              prerelease: false
+            });
+            
+            console.log('Release created:', release.html_url);
