@@ -1,0 +1,102 @@
+name: MCP Self-Improvement Cycle
+
+on:
+  # Run every 6 hours
+  schedule:
+    - cron: '0 */6 * * *'
+  
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      apply_fixes:
+        description: 'Apply automatic fixes'
+        required: false
+        type: boolean
+        default: false
+      full_cycle:
+        description: 'Run full improvement cycle'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  self-improve:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: npm run build
+      
+      - name: Run MCP Self-Improvement (Analysis)
+        if: ${{ !inputs.apply_fixes && !inputs.full_cycle }}
+        run: node mcp-demo.js
+      
+      - name: Run MCP Self-Improvement (Preview Fixes)
+        if: ${{ inputs.apply_fixes && !inputs.full_cycle }}
+        run: node mcp-demo.js --apply-fixes
+      
+      - name: Run MCP Self-Improvement (Full Cycle)
+        if: ${{ inputs.full_cycle }}
+        run: node mcp-demo.js --full-cycle
+      
+      - name: Check for improvements
+        if: ${{ inputs.full_cycle }}
+        id: check_changes
+        run: |
+          if [[ -n $(git status -s) ]]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit and push improvements
+        if: ${{ inputs.full_cycle && steps.check_changes.outputs.has_changes == 'true' }}
+        run: |
+          git config user.name "MCP Self-Improvement Bot"
+          git config user.email "mcp-bot@a2a.dev"
+          git add -A
+          git commit -m "🤖 MCP autonomous improvements
+
+          Applied by MCP self-improvement tools:
+          - Code quality fixes
+          - Formatting improvements
+          - Type corrections
+          
+          Run: ${{ github.run_id }}
+          Workflow: ${{ github.workflow }}"
+          git push
+      
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## MCP Self-Improvement Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Apply Fixes**: ${{ inputs.apply_fixes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Full Cycle**: ${{ inputs.full_cycle }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]]; then
+            echo "✅ Improvements applied and committed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✓ Analysis complete - no changes needed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Documentation" >> $GITHUB_STEP_SUMMARY
+          echo "- [Self-Improvement Guide](../SELF_IMPROVEMENT_GUIDE.md)" >> $GITHUB_STEP_SUMMARY
+          echo "- [MCP Integration Guide](../MCP_INTEGRATION_GUIDE.md)" >> $GITHUB_STEP_SUMMARY

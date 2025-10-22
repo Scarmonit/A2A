@@ -4,7 +4,25 @@
 [![Security Scan](https://github.com/Scarmonit/A2A/actions/workflows/security.yml/badge.svg)](https://github.com/Scarmonit/A2A/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, featuring WebSocket streaming for real-time agent communication.
+An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, featuring WebSocket streaming for real-time agent communication **and autonomous self-improvement capabilities**.
+
+## 🤖 Self-Improving MCP
+
+**NEW**: The MCP can now analyze and improve itself autonomously!
+
+```bash
+# Try it now!
+node mcp-demo.js
+```
+
+The MCP autonomously:
+- 📊 Analyzes its own performance and detects bottlenecks
+- 🔍 Scans the codebase for quality, security, and complexity issues
+- 🔧 Automatically fixes common problems (formatting, imports, types)
+- 💡 Suggests enhancements based on usage patterns
+- 🔄 Continuously improves itself over time
+
+**[→ See Self-Improvement Demo](./MCP_DEMO_GUIDE.md)** | **[→ Complete Guide](./SELF_IMPROVEMENT_GUIDE.md)**
 
 ## Features
 
@@ -14,8 +32,18 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 - **Handoff Support**: Seamless agent-to-agent handoffs
 - **Status Tracking**: Real-time status monitoring and cancellation
 - **Idempotency**: Built-in support for idempotent operations
+- **🆕 Autonomous Self-Improvement**: Analyzes, fixes, and enhances itself automatically
+- **🆕 Real-Time Dashboard**: WebSocket-based monitoring with sub-second latency
+- **🆕 Advanced Analytics**: Comprehensive metrics, insights, and anomaly detection
 
-## Tools
+## Self-Improvement Tools
+
+- `mcp_self_analyze` - Analyze server performance and generate recommendations
+- `mcp_analyze_code_quality` - Scan codebase for quality/security/complexity issues
+- `mcp_auto_fix` - Automatically fix common problems
+- `mcp_suggest_enhancements` - Proactively suggest optimizations
+
+## Agent Tools
 
 - `list_agents` - List all available agents
 - `describe_agent` - Get detailed information about an agent
