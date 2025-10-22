@@ -1,12 +1,10 @@
 // Vercel API wrapper for A2A MCP Server
 // This adapts the MCP server for Vercel's serverless environment
-
 import { createServer } from 'http';
 import { parse } from 'url';
 
 // Import the main MCP server logic
 // Note: This will need to be adjusted based on how you want to handle the stdio transport in serverless
-
 let mcpServerHandler;
 
 // Initialize the MCP server for HTTP requests instead of stdio
@@ -81,6 +79,17 @@ export default async function handler(req, res) {
       return res.status(200).json(result);
     }
     
+    // Add dedicated /invoke endpoint for agent invocation
+    if (pathname === '/invoke' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      await new Promise(resolve => req.on('end', resolve));
+      
+      const params = JSON.parse(body);
+      const result = await server.handleRequest('invoke_agent', params);
+      return res.status(200).json(result);
+    }
+    
     // Parse JSON body for POST requests
     if (req.method === 'POST') {
       let body = '';
@@ -99,7 +108,8 @@ export default async function handler(req, res) {
       endpoints: {
         health: '/health',
         agents: '/agents',
-        invoke: 'POST with {method, params}'
+        invoke: 'POST /invoke with {agentId, capability, input}',
+        generic: 'POST with {method, params}'
       }
     });
     
