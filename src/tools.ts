@@ -359,7 +359,7 @@ export class ToolRegistry {
     });
   }
   
-  private resolvePath(filePath: string, context?: ToolExecutionContext): string {
+  protected resolvePath(filePath: string, context?: ToolExecutionContext): string {
     if (path.isAbsolute(filePath)) {
       return filePath;
     }

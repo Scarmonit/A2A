@@ -1,7 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { agents, agentRegistry, ensureRequestId } from './agents.js';
-import { agentExecutor } from './agent-types.js';
+import { practicalToolRegistry } from './practical-tools.js';
+import { createEnhancedAgent, createAgentEcosystem, ENHANCED_AGENT_TYPES } from './enhanced-agents.js';
+import { agentExecutor } from './agent-executor.js';
 import { permissionManager } from './permissions.js';
 import { agentMCPManager } from './agent-mcp-servers.js';
 import { StreamHub } from './streaming.js';
@@ -174,7 +176,7 @@ const server = new Server({
                 properties: {
                     action: {
                         type: 'string',
-                        enum: ['list_agents', 'describe_agent', 'open_session', 'close_session', 'invoke_agent', 'cancel', 'get_status', 'handoff', 'deploy_agent', 'deploy_batch', 'update_agent', 'enable_agent', 'disable_agent', 'remove_agent', 'get_stats', 'generate_agents', 'filter_agents', 'grant_permission', 'request_permission', 'approve_permission', 'revoke_permission', 'get_permissions', 'create_mcp_server', 'add_tool_to_agent', 'share_tool', 'connect_to_agent_mcp', 'execute_shared_tool', 'discover_tools', 'get_sharing_agreements']
+                        enum: ['list_agents', 'describe_agent', 'open_session', 'close_session', 'invoke_agent', 'cancel', 'get_status', 'handoff', 'deploy_agent', 'deploy_batch', 'update_agent', 'enable_agent', 'disable_agent', 'remove_agent', 'get_stats', 'generate_agents', 'filter_agents', 'create_enhanced_agent', 'create_agent_ecosystem', 'list_enhanced_types', 'execute_practical_tool', 'list_practical_tools', 'grant_permission', 'request_permission', 'approve_permission', 'revoke_permission', 'get_permissions', 'create_mcp_server', 'add_tool_to_agent', 'share_tool', 'connect_to_agent_mcp', 'execute_shared_tool', 'discover_tools', 'get_sharing_agreements']
                     },
                     // For describe_agent
                     id: { type: 'string' },
@@ -210,13 +212,20 @@ const server = new Server({
                     expiresIn: { type: 'number' },
                     reason: { type: 'string' },
                     grantId: { type: 'string' },
+                    // For enhanced agents
+                    agentType: { type: 'string' },
+                    useCase: { type: 'string' },
+                    agentConfig: { type: 'object' },
+                    // For practical tools
+                    toolName: { type: 'string' },
+                    toolCategory: { type: 'string' },
+                    toolParams: { type: 'object' },
+                    executionContext: { type: 'object' },
                     // For MCP servers and tools
                     mcpConfig: { type: 'object' },
                     tool: { type: 'object' },
-                    toolName: { type: 'string' },
                     providerAgentId: { type: 'string' },
                     consumerAgentId: { type: 'string' },
-                    toolParams: { type: 'object' },
                     shareOptions: { type: 'object' },
                     discoveryFilters: { type: 'object' }
                 },
@@ -363,6 +372,81 @@ const server = new Server({
                         const filtered = agentRegistry.list(filter);
                         return ok({ agents: filtered, count: filtered.length });
                     }
+                    case 'create_enhanced_agent': {
+                        const { agentType, agentConfig = {} } = params;
+                        if (!agentType) {
+                            return fail('agentType is required for create_enhanced_agent', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const agent = createEnhancedAgent(agentType, agentConfig);
+                            const success = agentRegistry.deploy(agent);
+                            agentOps.inc({ operation: 'create_enhanced' });
+                            return ok({ deployed: success, agent, agentId: agent.id });
+                        }
+                        catch (error) {
+                            return fail(`Failed to create enhanced agent: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'create_agent_ecosystem': {
+                        const { useCase } = params;
+                        if (!useCase) {
+                            return fail('useCase is required for create_agent_ecosystem', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const agents = createAgentEcosystem(useCase);
+                            const result = agentRegistry.deployBatch(agents);
+                            agentOps.inc({ operation: 'create_ecosystem' });
+                            return ok({ ...result, agents, useCase });
+                        }
+                        catch (error) {
+                            return fail(`Failed to create agent ecosystem: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'list_enhanced_types': {
+                        return ok({
+                            agentTypes: Object.values(ENHANCED_AGENT_TYPES),
+                            useCases: ['web-development', 'data-analysis', 'content-marketing', 'devops'],
+                            capabilities: {
+                                [ENHANCED_AGENT_TYPES.WEB_SCRAPER]: ['Advanced web scraping with pagination', 'Data extraction', 'Export to multiple formats'],
+                                [ENHANCED_AGENT_TYPES.CONTENT_WRITER]: ['SEO-optimized content generation', 'Multiple content types', 'Tone customization'],
+                                [ENHANCED_AGENT_TYPES.DATA_ANALYST]: ['Comprehensive data analysis', 'Statistical insights', 'Visualization generation'],
+                                [ENHANCED_AGENT_TYPES.API_TESTER]: ['API testing automation', 'Performance testing', 'Report generation'],
+                                [ENHANCED_AGENT_TYPES.DEPLOY_MANAGER]: ['Multi-platform deployment', 'CI/CD automation', 'Health monitoring'],
+                                [ENHANCED_AGENT_TYPES.SECURITY_SCANNER]: ['Vulnerability scanning', 'Compliance checking', 'Automated remediation']
+                            }
+                        });
+                    }
+                    case 'execute_practical_tool': {
+                        const { toolName, toolParams = {}, executionContext = {} } = params;
+                        if (!toolName) {
+                            return fail('toolName is required for execute_practical_tool', 'ERR_BAD_REQUEST');
+                        }
+                        try {
+                            const context = {
+                                agentId: 'system',
+                                requestId: ensureRequestId(),
+                                workingDirectory: process.cwd(),
+                                permissions: ['*'], // Full permissions for practical tools
+                                limits: {
+                                    maxExecutionTime: 300000, // 5 minutes
+                                    maxFileSize: 50 * 1024 * 1024 // 50MB
+                                },
+                                ...executionContext
+                            };
+                            const result = await practicalToolRegistry.execute(toolName, toolParams, context);
+                            agentOps.inc({ operation: 'execute_tool' });
+                            return ok(result);
+                        }
+                        catch (error) {
+                            return fail(`Failed to execute practical tool: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL');
+                        }
+                    }
+                    case 'list_practical_tools': {
+                        const { toolCategory } = params;
+                        const tools = practicalToolRegistry.list(toolCategory);
+                        const categories = practicalToolRegistry.getCategories();
+                        return ok({ tools, categories, count: tools.length });
+                    }
                     // Permission Management
                     case 'grant_permission': {
                         const { id, targetAgentId, permission, delegable, expiresIn, reason } = params;
@@ -465,6 +549,33 @@ const server = new Server({
         },
     },
 });
+// Helper function to get permissions for an agent
+function getAgentPermissions(agentId) {
+    const agent = agentRegistry.get(agentId);
+    if (!agent)
+        return ['file:read']; // Default minimal permissions
+    // Grant permissions based on agent category
+    switch (agent.category) {
+        case 'web_automation':
+            return ['network:http', 'file:write', 'file:read'];
+        case 'content_creation':
+            return ['file:write', 'file:read'];
+        case 'data_processing':
+            return ['file:read', 'file:write', 'data:process'];
+        case 'testing':
+            return ['network:http', 'file:write', 'file:read', 'system:read'];
+        case 'devops':
+            return ['*']; // DevOps agents need full permissions
+        case 'security':
+            return ['file:read', 'network:http', 'system:read'];
+        case 'system':
+            return ['system:read', 'system:execute', 'file:read'];
+        case 'file_operations':
+            return ['file:read', 'file:write', 'file:delete'];
+        default:
+            return ['file:read', 'file:write', 'network:http'];
+    }
+}
 async function runAgentJob(requestId, input) {
     const r = requests.get(requestId);
     r.status = 'running';
@@ -553,36 +664,6 @@ async function runAgentJob(requestId, input) {
         logger.error({ requestId, error: r.error }, 'agent job crashed');
     }
     r.updatedAt = Date.now();
-}
-function getAgentPermissions(agentId) {
-    // Determine permissions based on agent type
-    const type = agentId.split('-').slice(0, 2).join('-');
-    let permissions = [];
-    switch (type) {
-        case 'file-ops':
-            permissions = ['file:read', 'file:write', 'permission:delegate'];
-            break;
-        case 'code-gen':
-            permissions = ['file:read', 'file:write', 'code:generate', 'tool:share'];
-            break;
-        case 'data-processor':
-            permissions = ['file:read', 'file:write', 'data:process', 'tool:request'];
-            break;
-        case 'web-scraper':
-            permissions = ['network:http', 'file:write', 'tool:share'];
-            break;
-        case 'system-monitor':
-            permissions = ['system:execute', 'file:write', 'permission:delegate'];
-            break;
-        case 'echo': // Legacy echo agent
-            permissions = ['*']; // Full permissions for testing
-            break;
-        default:
-            permissions = ['file:read']; // Minimal permissions by default
-    }
-    // Initialize in permission manager
-    permissionManager.initializeAgent(agentId, permissions);
-    return permissions;
 }
 // metrics/health server
 if (METRICS_PORT > 0) {
