@@ -432,3 +432,6 @@ export class DashboardWebSocketServer {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       // aggregate backpressure for
+    };
+  }
+}
