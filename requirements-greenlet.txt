@@ -1,0 +1,4 @@
+# Python dependencies for greenlet A2A integration
+greenlet>=3.0.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

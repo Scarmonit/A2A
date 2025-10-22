@@ -1,6 +1,11 @@
 .vercel
 node_modules/
 dist/
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
 *.log
 .env.local
 .DS_Store

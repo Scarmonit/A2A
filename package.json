@@ -11,7 +11,12 @@
     "vercel:build": "npm run build",
     "vercel:dev": "vercel dev",
     "vercel:deploy": "vercel --prod",
-    "try": "node dist/scripts/try.js"
+    "try": "node dist/scripts/try.js",
+    "test": "npm run build && node --test tests/greenlet-integration.test.ts",
+    "test:python": "python3 -m pytest tests/python/test_greenlet_agent.py -v",
+    "test:all": "npm run test && npm run test:python",
+    "greenlet:start": "npm run build && node dist/cli/a2a-cli.js start",
+    "greenlet:cli": "npm run build && node dist/cli/a2a-cli.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.5.0",
