@@ -1,0 +1,234 @@
+{
+  "dashboard": {
+    "title": "A2A MCP Server - Production Monitoring",
+    "tags": ["a2a", "mcp", "agents", "production"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Agent Statistics",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "a2a_agents_total",
+            "legendFormat": "Total Agents",
+            "refId": "A"
+          },
+          {
+            "expr": "a2a_agents_enabled",
+            "legendFormat": "Enabled Agents",
+            "refId": "B"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        }
+      },
+      {
+        "id": 2,
+        "title": "MCP Server Health",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "expr": "a2a_mcp_servers_running",
+            "legendFormat": "Running",
+            "refId": "A"
+          },
+          {
+            "expr": "a2a_mcp_servers_healthy",
+            "legendFormat": "Healthy",
+            "refId": "B"
+          },
+          {
+            "expr": "a2a_mcp_servers_failed",
+            "legendFormat": "Failed",
+            "refId": "C"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "background"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes",
+            "legendFormat": "Resident Memory",
+            "refId": "A"
+          },
+          {
+            "expr": "nodejs_heap_size_used_bytes",
+            "legendFormat": "Heap Used",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "bytes"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Agent Invocations Rate",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "rate(a2a_agent_invocations_total[5m])",
+            "legendFormat": "{{agent_id}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Response Time P95",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, a2a_response_time_bucket)",
+            "legendFormat": "p95 Response Time",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, a2a_response_time_bucket)",
+            "legendFormat": "p50 Response Time",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "WebSocket Connections",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "expr": "a2a_websocket_connections",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+        "targets": [
+          {
+            "expr": "rate(a2a_errors_total[5m])",
+            "legendFormat": "{{error_type}}",
+            "refId": "A"
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.05],
+                "type": "gt"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "type": "query"
+            }
+          ],
+          "frequency": "60s",
+          "name": "High Error Rate Alert"
+        }
+      },
+      {
+        "id": 8,
+        "title": "CPU Usage",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+        "targets": [
+          {
+            "expr": "rate(process_cpu_user_seconds_total[5m]) * 100",
+            "legendFormat": "CPU Usage %",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "max": 100
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Workflow Execution Status",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+        "targets": [
+          {
+            "expr": "a2a_workflows_total",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Rate Limit Hits",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+        "targets": [
+          {
+            "expr": "rate(a2a_rate_limit_exceeded_total[5m])",
+            "legendFormat": "{{agent_id}}",
+            "refId": "A"
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "datasource",
+          "type": "datasource",
+          "query": "prometheus"
+        },
+        {
+          "name": "environment",
+          "type": "custom",
+          "options": ["production", "staging", "development"]
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "datasource": "prometheus",
+          "expr": "a2a_deployment_event",
+          "name": "Deployments",
+          "tagKeys": "version,environment"
+        }
+      ]
+    }
+  }
+}

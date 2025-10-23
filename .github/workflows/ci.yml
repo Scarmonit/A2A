@@ -27,10 +27,13 @@ jobs:
       - name: Run TypeScript compiler check
         run: npx tsc --noEmit
 
-      - name: Check code formatting
-        run: |
-          echo "Code formatting check completed"
-          # Add prettier or eslint here if configured
+      - name: Run ESLint
+        run: npx eslint src/**/*.ts --max-warnings 0
+        continue-on-error: true
+
+      - name: Check code formatting with Prettier
+        run: npx prettier --check "src/**/*.ts" "tests/**/*.ts"
+        continue-on-error: true
 
   build:
     name: Build Project

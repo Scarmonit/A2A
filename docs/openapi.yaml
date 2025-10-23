@@ -1,0 +1,459 @@
+openapi: 3.0.3
+info:
+  title: A2A MCP Server API
+  description: |
+    Agent-to-Agent Model Context Protocol Server API
+
+    This API provides endpoints for managing agents, workflows, and agent execution
+    through the Model Context Protocol (MCP).
+
+    Features:
+    - Agent management and discovery
+    - Real-time streaming execution
+    - Workflow orchestration
+    - Permission management
+    - Health monitoring and metrics
+  version: 0.1.0
+  contact:
+    name: A2A MCP Server
+    url: https://github.com/Scarmonit/A2A
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://a2a-mcp.example.com
+    description: Production server
+
+tags:
+  - name: agents
+    description: Agent management operations
+  - name: tools
+    description: MCP tool operations
+  - name: workflows
+    description: Workflow orchestration
+  - name: health
+    description: Health and monitoring endpoints
+  - name: metrics
+    description: Prometheus metrics
+
+paths:
+  /healthz:
+    get:
+      summary: Health check endpoint
+      description: Returns server health status
+      tags:
+        - health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus format
+      tags:
+        - metrics
+      responses:
+        '200':
+          description: Metrics data
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP nodejs_version_info Node.js version info.
+                  # TYPE nodejs_version_info gauge
+                  nodejs_version_info{version="v20.0.0",major="20",minor="0",patch="0"} 1
+
+  /api/agent:
+    get:
+      summary: Get agent status
+      description: Returns agent statistics and status information
+      tags:
+        - agents
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [status]
+          description: Action to perform
+      responses:
+        '200':
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentStatus'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    AgentDescriptor:
+      type: object
+      required:
+        - id
+        - name
+        - version
+        - capabilities
+      properties:
+        id:
+          type: string
+          description: Unique agent identifier
+          example: "web-scraper-001"
+        name:
+          type: string
+          description: Human-readable agent name
+          example: "Web Scraper Agent"
+        version:
+          type: string
+          description: Agent version
+          example: "1.0.0"
+        category:
+          type: string
+          description: Agent category
+          example: "web_automation"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["scraping", "automation", "web"]
+        enabled:
+          type: boolean
+          description: Whether agent is enabled
+          example: true
+        deployedAt:
+          type: integer
+          description: Deployment timestamp (Unix milliseconds)
+          example: 1698765432000
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCapability'
+        config:
+          type: object
+          additionalProperties: true
+          description: Agent-specific configuration
+
+    AgentCapability:
+      type: object
+      required:
+        - name
+        - inputSchema
+        - outputSchema
+      properties:
+        name:
+          type: string
+          description: Capability name
+          example: "scrape_web"
+        description:
+          type: string
+          description: Capability description
+          example: "Scrape data from web pages"
+        inputSchema:
+          type: object
+          description: JSON Schema for input validation
+        outputSchema:
+          type: object
+          description: JSON Schema for output validation
+
+    AgentStatus:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        service:
+          type: string
+          example: "a2a-mcp-server"
+        version:
+          type: string
+          example: "0.1.0"
+        time:
+          type: string
+          format: date-time
+        agents:
+          $ref: '#/components/schemas/AgentStats'
+
+    AgentStats:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of agents
+          example: 150
+        enabled:
+          type: integer
+          description: Number of enabled agents
+          example: 145
+        disabled:
+          type: integer
+          description: Number of disabled agents
+          example: 5
+        categories:
+          type: integer
+          description: Number of categories
+          example: 8
+        tags:
+          type: integer
+          description: Number of unique tags
+          example: 25
+
+    DashboardMetrics:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+          description: Metrics collection timestamp
+          example: 1698765432000
+        agents:
+          type: object
+          properties:
+            total:
+              type: integer
+            enabled:
+              type: integer
+            disabled:
+              type: integer
+            categories:
+              type: integer
+            tags:
+              type: integer
+            byCategory:
+              type: object
+              additionalProperties:
+                type: integer
+            byTag:
+              type: object
+              additionalProperties:
+                type: integer
+        mcpServers:
+          type: object
+          properties:
+            total:
+              type: integer
+            running:
+              type: integer
+            healthy:
+              type: integer
+            unhealthy:
+              type: integer
+            failed:
+              type: integer
+        performance:
+          type: object
+          properties:
+            memoryUsageMB:
+              type: number
+            memoryPercentage:
+              type: number
+            cpuLoadAverage:
+              type: array
+              items:
+                type: number
+            uptime:
+              type: number
+        connections:
+          type: object
+          properties:
+            websocketClients:
+              type: integer
+            activeStreams:
+              type: integer
+
+    WorkflowStep:
+      type: object
+      required:
+        - id
+        - name
+        - agentId
+        - capability
+        - input
+        - status
+        - attempt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        agentId:
+          type: string
+        capability:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        dependencies:
+          type: array
+          items:
+            type: string
+        conditions:
+          type: object
+          properties:
+            runIf:
+              type: string
+            skipIf:
+              type: string
+        retries:
+          type: object
+          properties:
+            maxAttempts:
+              type: integer
+            backoffMs:
+              type: integer
+        timeout:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed, skipped]
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: string
+        startedAt:
+          type: integer
+        completedAt:
+          type: integer
+        attempt:
+          type: integer
+
+    Workflow:
+      type: object
+      required:
+        - id
+        - name
+        - steps
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        createdAt:
+          type: integer
+        startedAt:
+          type: integer
+        completedAt:
+          type: integer
+        createdBy:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        globalContext:
+          type: object
+          additionalProperties: true
+
+    PermissionGrant:
+      type: object
+      required:
+        - id
+        - grantedBy
+        - grantedTo
+        - permission
+        - delegable
+        - grantedAt
+        - revoked
+      properties:
+        id:
+          type: string
+        grantedBy:
+          type: string
+        grantedTo:
+          type: string
+        permission:
+          type: string
+        delegable:
+          type: boolean
+        expiresAt:
+          type: integer
+        conditions:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [time_range, resource_limit, usage_count, context_match]
+              parameters:
+                type: object
+                additionalProperties: true
+        grantedAt:
+          type: integer
+        revoked:
+          type: boolean
+
+    RateLimitResult:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        remaining:
+          type: integer
+        resetAt:
+          type: integer
+        retryAfter:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "ERR_BAD_REQUEST"
+            message:
+              type: string
+              example: "unsupported action"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
