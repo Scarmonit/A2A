@@ -326,6 +326,11 @@ export class WorkflowOrchestrator {
         logger.info({ workflowId }, 'Workflow cancelled');
         return true;
     }
+    // Register a workflow template
+    registerTemplate(template) {
+        this.templates.set(template.name, template);
+        logger.info({ templateName: template.name, stepCount: template.steps.length }, 'Workflow template registered');
+    }
     loadDefaultTemplates() {
         // Code Generation Workflow
         this.templates.set('code-generation-pipeline', {

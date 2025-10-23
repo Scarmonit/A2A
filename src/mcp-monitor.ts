@@ -562,6 +562,24 @@ export class MCPServerMonitor {
       logger.info('MCP monitor data cleanup completed');
     }, 3600000); // Every hour
   }
+  
+  /**
+   * Get general stats (wrapper for other stats methods)
+   */
+  getStats(timeWindow: number = 3600000): any {
+    return {
+      serverStats: this.getServerStats(undefined, timeWindow),
+      toolStats: this.getToolStats(undefined, timeWindow),
+      resourceUsage: this.getResourceUsage(timeWindow),
+      recentCalls: this.serverCalls.slice(-100),
+      totalTracked: {
+        serverCalls: this.serverCalls.length,
+        toolCalls: this.toolCalls.length,
+        resourceAccesses: this.resourceAccesses.length,
+        permissionRequests: this.permissionRequests.length
+      }
+    };
+  }
 }
 
 // Export singleton instance

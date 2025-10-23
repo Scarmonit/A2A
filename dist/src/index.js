@@ -786,14 +786,35 @@ if (METRICS_PORT > 0) {
 }
 // Register self-improvement tools for autonomous enhancement
 registerSelfImprovementTools();
+// Start the Autonomous Service - MCP will now improve itself continuously
+import { autonomousService } from './autonomous-service.js';
 // Expose over stdio for MCP clients; streaming is available via WebSocket side-channel
 await server.connect(new StdioServerTransport());
-process.on('SIGINT', () => { try {
-    streamHub?.close();
+// Start autonomous self-improvement after server is ready
+if (process.env.ENABLE_AUTONOMOUS_SERVICE !== 'false') {
+    autonomousService.start().catch(error => {
+        logger.error({ error }, 'Failed to start autonomous service');
+    });
+    logger.info('🤖 Autonomous MCP Service started - server will continuously improve itself');
 }
-catch { } process.exit(0); });
-process.on('SIGTERM', () => { try {
-    streamHub?.close();
-}
-catch { } process.exit(0); });
-logger.info({ url: streamHub?.urlBase || 'stdio-only', maxConcurrency: MAX_CONCURRENCY }, 'A2A MCP server ready');
+process.on('SIGINT', () => {
+    try {
+        streamHub?.close();
+        autonomousService.stop();
+    }
+    catch { }
+    process.exit(0);
+});
+process.on('SIGTERM', () => {
+    try {
+        streamHub?.close();
+        autonomousService.stop();
+    }
+    catch { }
+    process.exit(0);
+});
+logger.info({
+    url: streamHub?.urlBase || 'stdio-only',
+    maxConcurrency: MAX_CONCURRENCY,
+    autonomousMode: process.env.ENABLE_AUTONOMOUS_SERVICE !== 'false'
+}, 'A2A MCP server ready');

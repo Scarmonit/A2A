@@ -459,6 +459,12 @@ export class WorkflowOrchestrator {
     return true;
   }
   
+  // Register a workflow template
+  registerTemplate(template: WorkflowTemplate): void {
+    this.templates.set(template.name, template);
+    logger.info({ templateName: template.name, stepCount: template.steps.length }, 'Workflow template registered');
+  }
+  
   private loadDefaultTemplates(): void {
     // Code Generation Workflow
     this.templates.set('code-generation-pipeline', {
