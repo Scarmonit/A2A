@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { WebSocket, WebSocketServer } from 'ws';
 import { agentRegistry } from './agents.js';
 import { EnhancedMCPManager } from './enhanced-mcp-manager.js';
+import { aggregationCache } from './aggregation-cache.js';
 import pino from 'pino';
 import * as os from 'os';
 
@@ -35,6 +36,18 @@ export interface DashboardMetrics {
     websocketClients: number;
     activeStreams: number;
   };
+  cache?: {
+    size: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+    avgComputeTime: number;
+  };
+  websocket?: {
+    connectedClients: number;
+    queuedMessages: number;
+    broadcastPending: boolean;
+  };
 }
 
 export interface DashboardEvent {
@@ -60,6 +73,18 @@ export class RealtimeDashboardHandler extends EventEmitter {
   private mcpManager?: EnhancedMCPManager;
   private updateIntervalMs: number;
   private startTime: number;
+  
+  // Cache configuration
+  private readonly CACHE_TTL = 4000; // 4 seconds (just under broadcast interval)
+  
+  // Backpressure control
+  private broadcastPending: boolean = false;
+  private lastBroadcastTime: number = 0;
+  private readonly MIN_BROADCAST_INTERVAL = 100; // Minimum 100ms between broadcasts
+  private readonly MAX_CLIENT_BUFFER = 100000; // 100KB buffer threshold
+  private messageQueue: Array<{ client: WebSocket; message: string }> = [];
+  private readonly MAX_QUEUE_SIZE = 1000;
+  private queueProcessInterval?: NodeJS.Timeout;
 
   constructor(options?: {
     port?: number;
@@ -76,6 +101,10 @@ export class RealtimeDashboardHandler extends EventEmitter {
     if (options?.port) {
       this.startWebSocketServer(options.port, options.host || '127.0.0.1');
     }
+    
+    // Start queue processing - use unref to allow process to exit
+    this.queueProcessInterval = setInterval(() => this.processMessageQueue(), 1000);
+    this.queueProcessInterval.unref();
 
     logger.info({ 
       port: options?.port, 
@@ -203,58 +232,71 @@ export class RealtimeDashboardHandler extends EventEmitter {
    * Collect current metrics
    */
   collectMetrics(): DashboardMetrics {
-    const agentStats = agentRegistry.getStats();
-    const agents = agentRegistry.list();
+    // Cache expensive metric calculations
+    return aggregationCache.getOrCompute(
+      'dashboard:metrics',
+      this.CACHE_TTL,
+      () => {
+        const agentStats = agentRegistry.getStats();
+        const agents = agentRegistry.list();
 
-    // Group agents by category and tag
-    const byCategory: Record<string, number> = {};
-    const byTag: Record<string, number> = {};
+        // Group agents by category and tag
+        const byCategory: Record<string, number> = {};
+        const byTag: Record<string, number> = {};
 
-    for (const agent of agents) {
-      if (agent.category) {
-        byCategory[agent.category] = (byCategory[agent.category] || 0) + 1;
-      }
-      
-      if (agent.tags) {
-        for (const tag of agent.tags) {
-          byTag[tag] = (byTag[tag] || 0) + 1;
+        for (const agent of agents) {
+          if (agent.category) {
+            byCategory[agent.category] = (byCategory[agent.category] || 0) + 1;
+          }
+          
+          if (agent.tags) {
+            for (const tag of agent.tags) {
+              byTag[tag] = (byTag[tag] || 0) + 1;
+            }
+          }
         }
+
+        // Memory metrics
+        const memUsage = process.memoryUsage();
+        const totalMem = os.totalmem();
+        const memoryUsageMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+        const memoryPercentage = Math.round((memUsage.heapUsed / totalMem) * 100);
+
+        // MCP server metrics (if manager available)
+        let mcpServers;
+        if (this.mcpManager) {
+          mcpServers = this.mcpManager.getHealthStatus();
+        }
+
+        const metrics: DashboardMetrics = {
+          timestamp: Date.now(),
+          agents: {
+            ...agentStats,
+            byCategory,
+            byTag,
+          },
+          mcpServers,
+          performance: {
+            memoryUsageMB,
+            memoryPercentage,
+            cpuLoadAverage: os.loadavg(),
+            uptime: Math.round((Date.now() - this.startTime) / 1000),
+          },
+          connections: {
+            websocketClients: this.clients.size,
+            activeStreams: 0, // Stream tracking not yet implemented
+          },
+          cache: aggregationCache.getStats(),
+          websocket: {
+            connectedClients: this.clients.size,
+            queuedMessages: this.messageQueue.length,
+            broadcastPending: this.broadcastPending,
+          },
+        };
+
+        return metrics;
       }
-    }
-
-    // Memory metrics
-    const memUsage = process.memoryUsage();
-    const totalMem = os.totalmem();
-    const memoryUsageMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-    const memoryPercentage = Math.round((memUsage.heapUsed / totalMem) * 100);
-
-    // MCP server metrics (if manager available)
-    let mcpServers;
-    if (this.mcpManager) {
-      mcpServers = this.mcpManager.getHealthStatus();
-    }
-
-    const metrics: DashboardMetrics = {
-      timestamp: Date.now(),
-      agents: {
-        ...agentStats,
-        byCategory,
-        byTag,
-      },
-      mcpServers,
-      performance: {
-        memoryUsageMB,
-        memoryPercentage,
-        cpuLoadAverage: os.loadavg(),
-        uptime: Math.round((Date.now() - this.startTime) / 1000),
-      },
-      connections: {
-        websocketClients: this.clients.size,
-        activeStreams: 0, // Could integrate with StreamHub if needed
-      },
-    };
-
-    return metrics;
+    );
   }
 
   /**
@@ -308,14 +350,77 @@ export class RealtimeDashboardHandler extends EventEmitter {
    * Broadcast a message to all connected clients
    */
   broadcast(message: string): void {
-    for (const client of this.clients) {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(message);
-        } catch (error) {
-          logger.error({ error }, 'Failed to send message to client');
+    // Skip if broadcast already in progress
+    if (this.broadcastPending) {
+      logger.debug('Skipping broadcast: previous broadcast still pending');
+      return;
+    }
+
+    // Enforce minimum interval between broadcasts
+    const now = Date.now();
+    const timeSinceLastBroadcast = now - this.lastBroadcastTime;
+    if (timeSinceLastBroadcast < this.MIN_BROADCAST_INTERVAL) {
+      logger.debug(
+        { waitTime: this.MIN_BROADCAST_INTERVAL - timeSinceLastBroadcast },
+        'Skipping broadcast: too soon after last broadcast'
+      );
+      return;
+    }
+
+    this.broadcastPending = true;
+    this.lastBroadcastTime = now;
+
+    // Use setImmediate to avoid blocking event loop
+    setImmediate(() => {
+      for (const client of this.clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          // Check client bufferedAmount (backpressure indicator)
+          if (client.bufferedAmount < this.MAX_CLIENT_BUFFER) {
+            client.send(message, (err) => {
+              if (err) {
+                logger.error({ error: err.message }, 'WebSocket send error');
+              }
+            });
+          } else {
+            // Client buffer full - queue or drop
+            logger.warn(
+              { bufferedAmount: client.bufferedAmount },
+              'Client buffer full, queuing message'
+            );
+            if (this.messageQueue.length < this.MAX_QUEUE_SIZE) {
+              this.messageQueue.push({ client, message });
+            } else {
+              logger.error('Message queue full, dropping message');
+            }
+          }
         }
       }
+
+      this.broadcastPending = false;
+    });
+  }
+
+  /**
+   * Process queued messages
+   */
+  private processMessageQueue(): void {
+    if (this.messageQueue.length === 0) {
+      return;
+    }
+
+    const batch = this.messageQueue.splice(0, 50); // Process 50 at a time
+    for (const { client, message } of batch) {
+      if (client.readyState === WebSocket.OPEN && client.bufferedAmount < this.MAX_CLIENT_BUFFER) {
+        client.send(message, (err) => {
+          if (err) {
+            logger.error({ error: err.message }, 'WebSocket send error from queue');
+          }
+        });
+      }
+    }
+
+    if (this.messageQueue.length > 0) {
+      logger.warn({ queueSize: this.messageQueue.length }, 'Message queue still has pending messages');
     }
   }
 
@@ -392,6 +497,12 @@ export class RealtimeDashboardHandler extends EventEmitter {
     logger.info('Shutting down RealtimeDashboardHandler');
 
     this.stopMetricsBroadcast();
+    
+    // Stop queue processing
+    if (this.queueProcessInterval) {
+      clearInterval(this.queueProcessInterval);
+      this.queueProcessInterval = undefined;
+    }
 
     // Close all client connections
     for (const client of this.clients) {
