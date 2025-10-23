@@ -1,0 +1,350 @@
+name: Copilot Autonomous Issue Creation
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC to analyze repo and create improvement issues
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      analysis_type:
+        description: 'Type of analysis to perform'
+        required: true
+        type: choice
+        options:
+          - full-repo-scan
+          - code-quality
+          - documentation
+          - testing
+          - security
+          - performance
+      auto_create_issues:
+        description: 'Automatically create issues'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  analyze-and-create-issues:
+    name: Analyze Repository & Create Issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript analysis
+        id: ts-analysis
+        run: |
+          echo "## TypeScript Analysis" > analysis.md
+          npx tsc --noEmit --pretty false 2>&1 | tee ts-errors.log || true
+
+          if [ -s ts-errors.log ]; then
+            echo "ts_errors=true" >> $GITHUB_OUTPUT
+            echo "Found TypeScript errors" >> analysis.md
+            cat ts-errors.log >> analysis.md
+          else
+            echo "ts_errors=false" >> $GITHUB_OUTPUT
+            echo "No TypeScript errors found ✅" >> analysis.md
+          fi
+
+      - name: Check for missing tests
+        id: test-analysis
+        run: |
+          echo "## Test Coverage Analysis" >> analysis.md
+
+          # Count test files
+          TEST_COUNT=$(find . -name "test-*.js" -o -name "*.test.ts" -o -name "*.test.js" | wc -l)
+          SRC_COUNT=$(find src -name "*.ts" | wc -l)
+
+          echo "test_count=$TEST_COUNT" >> $GITHUB_OUTPUT
+          echo "src_count=$SRC_COUNT" >> $GITHUB_OUTPUT
+
+          echo "- Test files: $TEST_COUNT" >> analysis.md
+          echo "- Source files: $SRC_COUNT" >> analysis.md
+
+          if [ $TEST_COUNT -lt $(($SRC_COUNT / 2)) ]; then
+            echo "needs_more_tests=true" >> $GITHUB_OUTPUT
+            echo "- ⚠️ Low test coverage detected" >> analysis.md
+          else
+            echo "needs_more_tests=false" >> $GITHUB_OUTPUT
+            echo "- ✅ Test coverage looks good" >> analysis.md
+          fi
+
+      - name: Check documentation completeness
+        id: doc-analysis
+        run: |
+          echo "## Documentation Analysis" >> analysis.md
+
+          # Check for missing README sections
+          MISSING_SECTIONS=""
+
+          grep -q "## Installation" README.md || MISSING_SECTIONS="$MISSING_SECTIONS Installation,"
+          grep -q "## Usage" README.md || MISSING_SECTIONS="$MISSING_SECTIONS Usage,"
+          grep -q "## API" README.md || MISSING_SECTIONS="$MISSING_SECTIONS API,"
+          grep -q "## Contributing" README.md || MISSING_SECTIONS="$MISSING_SECTIONS Contributing,"
+          grep -q "## License" README.md || MISSING_SECTIONS="$MISSING_SECTIONS License,"
+
+          if [ -n "$MISSING_SECTIONS" ]; then
+            echo "missing_docs=true" >> $GITHUB_OUTPUT
+            echo "missing_sections=$MISSING_SECTIONS" >> $GITHUB_OUTPUT
+            echo "- ⚠️ Missing sections: $MISSING_SECTIONS" >> analysis.md
+          else
+            echo "missing_docs=false" >> $GITHUB_OUTPUT
+            echo "- ✅ Documentation appears complete" >> analysis.md
+          fi
+
+      - name: Security audit
+        id: security-analysis
+        run: |
+          echo "## Security Analysis" >> analysis.md
+
+          npm audit --json > audit.json || true
+
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit.json)
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' audit.json)
+
+          echo "critical_vulns=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high_vulns=$HIGH" >> $GITHUB_OUTPUT
+
+          echo "- Critical vulnerabilities: $CRITICAL" >> analysis.md
+          echo "- High vulnerabilities: $HIGH" >> analysis.md
+
+          if [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ]; then
+            echo "has_security_issues=true" >> $GITHUB_OUTPUT
+            echo "- ⚠️ Security vulnerabilities detected" >> analysis.md
+          else
+            echo "has_security_issues=false" >> $GITHUB_OUTPUT
+            echo "- ✅ No critical security issues" >> analysis.md
+          fi
+
+      - name: Code quality checks
+        id: quality-analysis
+        run: |
+          echo "## Code Quality Analysis" >> analysis.md
+
+          # Check for TODO comments
+          TODO_COUNT=$(grep -r "TODO" src/ | wc -l || echo 0)
+          FIXME_COUNT=$(grep -r "FIXME" src/ | wc -l || echo 0)
+
+          echo "todo_count=$TODO_COUNT" >> $GITHUB_OUTPUT
+          echo "fixme_count=$FIXME_COUNT" >> $GITHUB_OUTPUT
+
+          echo "- TODO comments: $TODO_COUNT" >> analysis.md
+          echo "- FIXME comments: $FIXME_COUNT" >> analysis.md
+
+          if [ $TODO_COUNT -gt 10 ] || [ $FIXME_COUNT -gt 5 ]; then
+            echo "needs_cleanup=true" >> $GITHUB_OUTPUT
+            echo "- ⚠️ High number of TODO/FIXME comments" >> analysis.md
+          else
+            echo "needs_cleanup=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create TypeScript errors issue
+        if: steps.ts-analysis.outputs.ts_errors == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const errors = fs.readFileSync('ts-errors.log', 'utf8');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🔧 Fix TypeScript compilation errors',
+              body: `## TypeScript Errors Detected
+
+              Automated analysis found TypeScript compilation errors that need to be addressed.
+
+              ### Errors
+              \`\`\`
+              ${errors}
+              \`\`\`
+
+              ### Action Required
+              - [ ] Review and fix TypeScript errors
+              - [ ] Ensure strict type checking is enabled
+              - [ ] Update type definitions if needed
+              - [ ] Run \`npm run build\` to verify fixes
+
+              ### Context
+              This issue was automatically created by Copilot autonomous analysis.
+
+              ---
+              🤖 Created by Copilot Autonomous Issue Creation`,
+              labels: ['type:bug', 'priority:high', 'copilot-generated']
+            });
+
+      - name: Create test coverage issue
+        if: steps.test-analysis.outputs.needs_more_tests == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const testCount = '${{ steps.test-analysis.outputs.test_count }}';
+            const srcCount = '${{ steps.test-analysis.outputs.src_count }}';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🧪 Improve test coverage',
+              body: `## Low Test Coverage Detected
+
+              Current status:
+              - Test files: ${testCount}
+              - Source files: ${srcCount}
+              - Coverage ratio: ${(testCount/srcCount*100).toFixed(1)}%
+
+              ### Recommended Actions
+              - [ ] Add unit tests for core modules
+              - [ ] Add integration tests for MCP protocol
+              - [ ] Add E2E tests for agent operations
+              - [ ] Set up code coverage reporting
+              - [ ] Aim for >80% coverage
+
+              ### Suggested Test Areas
+              1. Agent lifecycle management
+              2. WebSocket streaming
+              3. Permission system
+              4. Tool execution
+              5. Error handling
+
+              ---
+              🤖 Created by Copilot Autonomous Issue Creation`,
+              labels: ['type:enhancement', 'priority:medium', 'copilot-generated', 'testing']
+            });
+
+      - name: Create documentation issue
+        if: steps.doc-analysis.outputs.missing_docs == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const missingSections = '${{ steps.doc-analysis.outputs.missing_sections }}';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '📚 Complete missing documentation sections',
+              body: `## Incomplete Documentation Detected
+
+              Missing sections: ${missingSections}
+
+              ### Required Documentation
+              - [ ] Installation instructions
+              - [ ] Usage examples
+              - [ ] API documentation
+              - [ ] Contributing guidelines
+              - [ ] License information
+
+              ### Additional Improvements
+              - [ ] Add architecture diagrams
+              - [ ] Include troubleshooting guide
+              - [ ] Document environment variables
+              - [ ] Add deployment guides
+              - [ ] Create FAQ section
+
+              ---
+              🤖 Created by Copilot Autonomous Issue Creation`,
+              labels: ['type:documentation', 'priority:medium', 'copilot-generated']
+            });
+
+      - name: Create security issue
+        if: steps.security-analysis.outputs.has_security_issues == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const critical = '${{ steps.security-analysis.outputs.critical_vulns }}';
+            const high = '${{ steps.security-analysis.outputs.high_vulns }}';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🔒 Fix security vulnerabilities',
+              body: `## Security Vulnerabilities Detected
+
+              - Critical vulnerabilities: ${critical}
+              - High vulnerabilities: ${high}
+
+              ### Immediate Actions
+              - [ ] Run \`npm audit fix\` to auto-fix
+              - [ ] Review breaking changes
+              - [ ] Update dependencies manually if needed
+              - [ ] Re-run security scan
+              - [ ] Test after updates
+
+              ### Security Best Practices
+              - Keep dependencies up to date
+              - Enable Dependabot
+              - Use security scanning in CI
+              - Follow OWASP guidelines
+
+              ---
+              🤖 Created by Copilot Autonomous Issue Creation
+              ⚠️ **PRIORITY: This is a security issue and should be addressed immediately**`,
+              labels: ['type:security', 'priority:critical', 'copilot-generated']
+            });
+
+      - name: Create code cleanup issue
+        if: steps.quality-analysis.outputs.needs_cleanup == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const todoCount = '${{ steps.quality-analysis.outputs.todo_count }}';
+            const fixmeCount = '${{ steps.quality-analysis.outputs.fixme_count }}';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🧹 Code cleanup: Address TODOs and FIXMEs',
+              body: `## Code Quality Cleanup Needed
+
+              - TODO comments: ${todoCount}
+              - FIXME comments: ${fixmeCount}
+
+              ### Action Items
+              - [ ] Review all TODO comments
+              - [ ] Address all FIXME items
+              - [ ] Remove or document deferred items
+              - [ ] Create specific issues for complex TODOs
+              - [ ] Update code documentation
+
+              ### Process
+              1. Search for \`TODO\` and \`FIXME\` in codebase
+              2. Evaluate each comment
+              3. Fix or create tracked issue
+              4. Remove resolved comments
+
+              ---
+              🤖 Created by Copilot Autonomous Issue Creation`,
+              labels: ['type:chore', 'priority:low', 'copilot-generated']
+            });
+
+      - name: Upload analysis report
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-analysis
+          path: analysis.md
+          retention-days: 30
+
+      - name: Comment on summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = fs.readFileSync('analysis.md', 'utf8');
+
+            console.log('Repository Analysis Complete:');
+            console.log(analysis);
