@@ -4,9 +4,11 @@
 [![Security Scan](https://github.com/Scarmonit/A2A/actions/workflows/security.yml/badge.svg)](https://github.com/Scarmonit/A2A/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, featuring WebSocket streaming for real-time agent communication.
+An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, featuring WebSocket streaming for real-time agent communication and production-ready management capabilities.
 
 ## Features
+
+### Core MCP Features
 
 - **MCP Protocol Support**: Full implementation of the Model Context Protocol
 - **WebSocket Streaming**: High-performance real-time communication
@@ -15,6 +17,20 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 - **Status Tracking**: Real-time status monitoring and cancellation
 - **Idempotency**: Built-in support for idempotent operations
 - **Parallel Command Execution**: Execute multiple commands concurrently using execa
+
+### Production-Ready Features 🚀
+
+- **Auto-Recovery**: Automatic restart with exponential backoff (1s → 2s → 4s)
+- **Health Monitoring**: Configurable health checks (default 30s intervals)
+- **Real-time Dashboard**: WebSocket-based live metrics broadcasting
+- **Kubernetes Support**: Production-grade container orchestration
+- **Event-Driven Architecture**: EventEmitter-based lifecycle hooks
+- **Prometheus Integration**: Built-in metrics collection
+- **Horizontal Auto-Scaling**: HPA configuration for dynamic scaling
+- **Persistent Storage**: PVC support for data persistence
+- **Graceful Shutdown**: Proper cleanup and resource management
+
+📖 **[Complete Production Features Guide](./docs/PRODUCTION_FEATURES.md)**
 
 ## Parallel Command Execution
 
@@ -108,6 +124,65 @@ results.forEach(result => {
 - **Efficient Testing**: Run test suites in parallel across packages
 - **Better Resource Utilization**: Maximize CPU and I/O usage
 
+## Production Management
+
+### EnhancedMCPManager
+
+Production-ready MCP server management with auto-recovery:
+
+```typescript
+import { EnhancedMCPManager } from './src/enhanced-mcp-manager.js';
+
+const manager = new EnhancedMCPManager();
+
+// Register server with auto-recovery
+manager.registerServer({
+  id: 'my-server',
+  type: 'api',
+  command: 'node',
+  args: ['server.js'],
+  healthCheck: async () => true,
+  autoRestart: true,
+  maxRestarts: 3
+});
+
+// Start server and health monitoring
+await manager.startServer('my-server');
+manager.startHealthMonitoring(30000); // 30-second intervals
+
+// Listen for lifecycle events
+manager.on('server:recovered', ({ id, attempts }) => {
+  console.log(`Server ${id} recovered after ${attempts} attempts`);
+});
+```
+
+### RealtimeDashboardHandler
+
+Real-time metrics broadcasting for monitoring:
+
+```typescript
+import { RealtimeDashboardHandler } from './src/realtime-dashboard-handler.js';
+
+const dashboard = new RealtimeDashboardHandler({
+  port: 9000,
+  updateIntervalMs: 5000,
+  mcpManager: manager
+});
+
+// Start broadcasting metrics
+dashboard.startMetricsBroadcast();
+
+// Connect from client
+const ws = new WebSocket('ws://localhost:9000');
+ws.onmessage = (event) => {
+  const { type, data } = JSON.parse(event.data);
+  if (type === 'metrics:update') {
+    console.log('Agents:', data.agents.total);
+    console.log('Memory:', data.performance.memoryUsageMB + 'MB');
+  }
+};
+```
+
 ## Tools
 
 - `list_agents` - List all available agents
@@ -123,6 +198,7 @@ results.forEach(result => {
 
 - **MCP stdio**: For Claude and other MCP clients
 - **WebSocket**: High-performance side-channel at `ws://127.0.0.1:8787`
+- **Dashboard WebSocket**: Real-time metrics at `ws://127.0.0.1:9000`
 
 ## Quick Start
 
@@ -163,6 +239,37 @@ The server will start with:
 npm run build
 npm start
 ```
+
+## Kubernetes Deployment
+
+Deploy A2A to Kubernetes for production workloads:
+
+```bash
+# Build Docker image
+docker build -t scarmonit/a2a-mcp:latest .
+
+# Deploy to Kubernetes
+kubectl apply -f k8s/deployment.yaml
+
+# Check status
+kubectl get pods -n a2a-mcp
+kubectl get svc -n a2a-mcp
+
+# Access services
+kubectl port-forward -n a2a-mcp svc/a2a-mcp-websocket 8787:8787
+kubectl port-forward -n a2a-mcp svc/a2a-mcp-metrics 3000:3000
+```
+
+### Kubernetes Features
+
+- **Auto-Scaling**: HPA with CPU/memory thresholds (2-10 replicas)
+- **Health Probes**: Liveness, readiness, and startup checks
+- **Load Balancing**: External access via LoadBalancer service
+- **Persistent Storage**: 5Gi PVC for data persistence
+- **Prometheus**: ServiceMonitor for metrics scraping
+- **Resource Management**: CPU and memory limits/requests
+
+📖 **[Kubernetes Deployment Guide](./docs/PRODUCTION_FEATURES.md#kubernetes-deployment)**
 
 ## Usage
 
@@ -259,6 +366,7 @@ All streaming operations use the following event types:
 
 ### Supported Platforms
 
+- **Kubernetes** (Production) - [Deploy Guide](./docs/PRODUCTION_FEATURES.md#kubernetes-deployment)
 - **Railway** (Primary) - [Deploy Guide](./YOUR_DEPLOYMENT.md)
 - **Render** - Automatic deployment via GitHub Actions
 - **Fly.io** - [Setup Guide](./QUICK_DEPLOY.md)
@@ -274,7 +382,52 @@ See `.env.example` for required environment variables.
   
 ✅ All services are functioning correctly
 
+## Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file
+node --test tests/enhanced-features.test.ts
+
+# Watch mode
+npm run test:watch
+
+# Coverage
+npm run test:coverage
+```
+
+## Monitoring
+
+### Prometheus Metrics
+
+Available at `/metrics` endpoint (port 3000):
+
+```bash
+curl http://localhost:3000/metrics
+```
+
+### Health Check
+
+```bash
+curl http://localhost:3000/healthz
+```
+
+### Agent Status API
+
+```bash
+curl http://localhost:3000/api/agent?action=status
+```
+
 ## Documentation
+
+### Production Features
+- **[Production Features Guide](./docs/PRODUCTION_FEATURES.md)** - Complete production deployment guide
+- **[Auto-Recovery](./docs/PRODUCTION_FEATURES.md#enhancedmcpmanager)** - Automatic restart with exponential backoff
+- **[Health Monitoring](./docs/PRODUCTION_FEATURES.md#health-monitoring)** - Configurable health checks
+- **[Real-time Dashboard](./docs/PRODUCTION_FEATURES.md#realtimedashboardhandler)** - Live metrics broadcasting
+- **[Kubernetes](./docs/PRODUCTION_FEATURES.md#kubernetes-deployment)** - Production K8s deployment
 
 ### GitHub Copilot Integration
 - **[Feature Overview](./docs/COPILOT_FEATURES.md)** - Visual guide to all capabilities
