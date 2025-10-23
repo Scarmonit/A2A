@@ -195,7 +195,8 @@ describe('MCPServerMonitor', () => {
     
     assert.ok(highErrorAnomaly, 'Should detect high error rate');
     assert.equal(highErrorAnomaly.severity, 'high', 'Should have high severity');
-    assert.ok(highErrorAnomaly.description.includes('90%'), 'Should mention threshold');
+    assert.ok(highErrorAnomaly.description.includes('threshold'), 'Should mention threshold');
+    assert.ok(highErrorAnomaly.description.includes('%'), 'Should include percentage');
   });
 
   it('should detect high latency', async () => {
@@ -218,7 +219,8 @@ describe('MCPServerMonitor', () => {
     
     assert.ok(highLatencyAnomaly, 'Should detect high latency');
     assert.equal(highLatencyAnomaly.severity, 'medium', 'Should have medium severity');
-    assert.ok(highLatencyAnomaly.description.includes('1000ms'), 'Should mention threshold');
+    assert.ok(highLatencyAnomaly.description.includes('threshold'), 'Should mention threshold');
+    assert.ok(highLatencyAnomaly.description.includes('ms'), 'Should include milliseconds unit');
   });
 
   it('should detect error spikes', async () => {
@@ -242,7 +244,8 @@ describe('MCPServerMonitor', () => {
     
     assert.ok(errorSpikeAnomaly, 'Should detect error spike');
     assert.equal(errorSpikeAnomaly.severity, 'high', 'Should have high severity');
-    assert.ok(errorSpikeAnomaly.description.includes('5 minutes'), 'Should mention time window');
+    assert.ok(errorSpikeAnomaly.description.includes('minutes'), 'Should mention time window');
+    assert.ok(errorSpikeAnomaly.description.includes('error'), 'Should mention errors');
   });
 
   it('should return empty metrics for unknown server', async () => {

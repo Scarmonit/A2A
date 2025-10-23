@@ -383,6 +383,9 @@ export class EnhancedMCPManager extends EventEmitter {
 
   /**
    * Call a tool on an MCP server with automatic performance tracking
+   * 
+   * Note: This is a placeholder implementation that demonstrates the tracking pattern.
+   * In production, replace the placeholder logic with actual MCP client calls.
    */
   async callTool(serverId: string, method: string, params: any): Promise<any> {
     const startTime = Date.now();
@@ -400,13 +403,18 @@ export class EnhancedMCPManager extends EventEmitter {
         throw new Error(`Server ${serverId} is not running (status: ${state.status})`);
       }
 
-      // In a real implementation, this would use the MCP client to call the tool
-      // For now, this is a placeholder that shows the tracking pattern
+      // Placeholder - In production, replace with actual MCP client call:
       // result = await state.client.callTool(method, params);
       
-      // Placeholder - in production, replace with actual MCP client call
-      result = { success: true, data: {} };
-      success = true;
+      // Simulate realistic behavior for testing
+      if (Math.random() < 0.95) {
+        // 95% success rate by default
+        result = { success: true, data: { method, timestamp: Date.now() } };
+        success = true;
+      } else {
+        // Simulate occasional failures for testing
+        throw new Error('Simulated call failure');
+      }
       
       return result;
     } catch (error: any) {

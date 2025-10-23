@@ -2,6 +2,14 @@ import AnalyticsEngine from './analytics-engine.js';
 
 const analyticsEngine = AnalyticsEngine.getInstance();
 
+// Configurable thresholds for anomaly detection
+export const ANOMALY_THRESHOLDS = {
+  MIN_SUCCESS_RATE: 0.9, // 90%
+  MAX_P95_LATENCY_MS: 1000,
+  ERROR_SPIKE_COUNT: 10,
+  ERROR_SPIKE_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
+};
+
 export interface MCPServerCallParams {
   serverId: string;
   method: string;
@@ -95,11 +103,11 @@ export class MCPServerMonitor {
       : 0;
 
     const p95Latency = durations.length > 0 
-      ? durations[Math.floor(durations.length * 0.95)] || 0 
+      ? durations[Math.min(Math.floor(durations.length * 0.95), durations.length - 1)]
       : 0;
 
     const p99Latency = durations.length > 0 
-      ? durations[Math.floor(durations.length * 0.99)] || 0 
+      ? durations[Math.min(Math.floor(durations.length * 0.99), durations.length - 1)]
       : 0;
 
     return {
@@ -134,21 +142,21 @@ export class MCPServerMonitor {
     }> = [];
 
     // High error rate
-    if (metrics.successRate < 0.9 && metrics.totalCalls > 0) {
+    if (metrics.successRate < ANOMALY_THRESHOLDS.MIN_SUCCESS_RATE && metrics.totalCalls > 0) {
       anomalies.push({
         type: 'high_error_rate',
         severity: 'high',
-        description: `Success rate is ${(metrics.successRate * 100).toFixed(1)}% (below 90% threshold)`,
+        description: `Success rate is ${(metrics.successRate * 100).toFixed(1)}% (below ${ANOMALY_THRESHOLDS.MIN_SUCCESS_RATE * 100}% threshold)`,
         data: { successRate: metrics.successRate, errorsByType: metrics.errorsByType },
       });
     }
 
     // High latency
-    if (metrics.p95Latency > 1000) {
+    if (metrics.p95Latency > ANOMALY_THRESHOLDS.MAX_P95_LATENCY_MS) {
       anomalies.push({
         type: 'high_latency',
         severity: 'medium',
-        description: `P95 latency is ${metrics.p95Latency}ms (above 1000ms threshold)`,
+        description: `P95 latency is ${metrics.p95Latency}ms (above ${ANOMALY_THRESHOLDS.MAX_P95_LATENCY_MS}ms threshold)`,
         data: { p95: metrics.p95Latency, p99: metrics.p99Latency },
       });
     }
@@ -156,7 +164,7 @@ export class MCPServerMonitor {
     // Sudden spike in errors (last 5 minutes)
     const now = Date.now();
     const recentEvents = await analyticsEngine.query({
-      timeRange: { start: now - 5 * 60 * 1000, end: now },
+      timeRange: { start: now - ANOMALY_THRESHOLDS.ERROR_SPIKE_WINDOW_MS, end: now },
       filters: {
         eventType: 'mcp_server_call',
         agentId: serverId,
@@ -166,11 +174,11 @@ export class MCPServerMonitor {
 
     const recentErrors = recentEvents.filter((e: any) => !e.data.success).length;
 
-    if (recentErrors > 10) {
+    if (recentErrors > ANOMALY_THRESHOLDS.ERROR_SPIKE_COUNT) {
       anomalies.push({
         type: 'error_spike',
         severity: 'high',
-        description: `${recentErrors} errors in last 5 minutes`,
+        description: `${recentErrors} errors in last ${ANOMALY_THRESHOLDS.ERROR_SPIKE_WINDOW_MS / 60000} minutes`,
         data: { count: recentErrors },
       });
     }
