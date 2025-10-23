@@ -130,10 +130,16 @@ export class WorkflowOrchestrator {
     this.workflows.set(workflowId, workflow);
     
     logger.info({ workflowId, stepCount: steps.length }, 'Custom workflow created');
-    
+
     return workflow;
   }
-  
+
+  // Register a workflow template
+  registerTemplate(name: string, template: WorkflowTemplate): void {
+    this.templates.set(name, template);
+    logger.info({ templateName: name }, 'Workflow template registered');
+  }
+
   // Execute workflow
   async executeWorkflow(workflowId: string): Promise<void> {
     const workflow = this.workflows.get(workflowId);
