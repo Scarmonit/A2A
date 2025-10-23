@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess } from 'child_process';
 import { agentRegistry } from './agents.js';
 import pino from 'pino';
+import { auditLogger, AuditEventType, AuditSeverity } from './audit-logger.js';
 
 const logger = pino({ name: 'enhanced-mcp-manager' });
 
@@ -73,6 +74,17 @@ export class EnhancedMCPManager extends EventEmitter {
     this.servers.set(config.id, state);
     this.emit('server:registered', { id: config.id });
     logger.info({ serverId: config.id, type: config.type }, 'Server registered');
+
+    // Audit log registration
+    auditLogger.log({
+      eventType: AuditEventType.AGENT_REGISTERED,
+      severity: AuditSeverity.INFO,
+      agentId: config.id,
+      action: `MCP server ${config.id} registered`,
+      resource: config.id,
+      metadata: { type: config.type, autoRestart: config.autoRestart },
+      success: true,
+    });
   }
 
   /**
@@ -105,6 +117,17 @@ export class EnhancedMCPManager extends EventEmitter {
       this.emit('server:started', { id });
       logger.info({ serverId: id, pid: proc.pid }, 'Server started');
 
+      // Audit log server start
+      auditLogger.log({
+        eventType: AuditEventType.AGENT_REGISTERED,
+        severity: AuditSeverity.INFO,
+        agentId: id,
+        action: `MCP server ${id} started`,
+        resource: id,
+        metadata: { pid: proc.pid, config: state.config },
+        success: true,
+      });
+
       // Handle process events
       proc.on('exit', (code, signal) => this.handleProcessExit(id, code, signal));
       proc.on('error', (error) => this.handleProcessError(id, error));
@@ -116,6 +139,20 @@ export class EnhancedMCPManager extends EventEmitter {
       state.status = 'failed';
       this.emit('server:failed', { id, error });
       logger.error({ serverId: id, error }, 'Failed to start server');
+
+      // Audit log failure
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      auditLogger.log({
+        eventType: AuditEventType.AGENT_REGISTERED,
+        severity: AuditSeverity.WARNING,
+        agentId: id,
+        action: `Failed to start MCP server ${id}`,
+        resource: id,
+        metadata: {},
+        success: false,
+        errorMessage,
+      });
+
       throw error;
     }
   }
@@ -148,6 +185,17 @@ export class EnhancedMCPManager extends EventEmitter {
     state.status = 'stopped';
     this.emit('server:stopped', { id });
     logger.info({ serverId: id }, 'Server stopped');
+
+    // Audit log server stop
+    auditLogger.log({
+      eventType: AuditEventType.AGENT_DEREGISTERED,
+      severity: AuditSeverity.INFO,
+      agentId: id,
+      action: `MCP server ${id} stopped`,
+      resource: id,
+      metadata: {},
+      success: true,
+    });
   }
 
   /**

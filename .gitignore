@@ -10,6 +10,9 @@ venv/
 .env.local
 .DS_Store
 
+# Audit logging data directory
+data/
+
 # VS Code settings (user-specific)
 .vscode/settings.json
 .vscode/*.code-workspace
