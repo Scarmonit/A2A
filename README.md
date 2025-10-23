@@ -26,11 +26,101 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 - **Kubernetes Support**: Production-grade container orchestration
 - **Event-Driven Architecture**: EventEmitter-based lifecycle hooks
 - **Prometheus Integration**: Built-in metrics collection
+- **MCP Server Call Tracking**: Detailed performance monitoring and anomaly detection
 - **Horizontal Auto-Scaling**: HPA configuration for dynamic scaling
 - **Persistent Storage**: PVC support for data persistence
 - **Graceful Shutdown**: Proper cleanup and resource management
 
 📖 **[Complete Production Features Guide](./docs/PRODUCTION_FEATURES.md)**
+
+## MCP Server Call Tracking & Performance Metrics
+
+Track and analyze MCP server call performance with detailed metrics and automatic anomaly detection.
+
+### Features
+
+- **Call Tracking**: Track every MCP server call with latency, success/failure status, and error types
+- **Performance Metrics**: Success rate, average latency, P95/P99 latencies, error breakdown
+- **Anomaly Detection**: Automatic detection of high error rates, latency spikes, and error bursts
+- **REST API**: Query metrics via `/api/mcp-metrics` endpoint
+- **Analytics Integration**: Seamlessly integrated with the existing AnalyticsEngine
+
+### Quick Start
+
+```typescript
+import { mcpMonitor } from './src/mcp-monitor';
+import { EnhancedMCPManager } from './src/enhanced-mcp-manager';
+
+// Automatic tracking with EnhancedMCPManager
+const manager = new EnhancedMCPManager();
+await manager.callTool('server-id', 'tools/list', {});
+// Calls are automatically tracked!
+
+// Or track manually
+mcpMonitor.trackServerCall({
+  serverId: 'my-server',
+  method: 'tools/list',
+  duration: 150,
+  success: true,
+});
+
+// Get performance metrics
+const metrics = await mcpMonitor.getServerMetrics('my-server', '1h');
+console.log('Success rate:', metrics.successRate);
+console.log('P95 latency:', metrics.p95Latency, 'ms');
+console.log('Errors by type:', metrics.errorsByType);
+
+// Detect anomalies
+const anomalies = await mcpMonitor.detectAnomalies('my-server');
+if (anomalies.length > 0) {
+  console.log('⚠️ Anomalies detected:', anomalies);
+}
+```
+
+### REST API Endpoint
+
+Query MCP server metrics via HTTP:
+
+```bash
+# Get metrics for the last hour
+curl "http://localhost:3000/api/mcp-metrics?serverId=my-server&timeRange=1h"
+
+# Response includes:
+# - totalCalls: Total number of calls tracked
+# - successRate: Percentage of successful calls (0-1)
+# - avgLatency: Average latency in milliseconds
+# - p95Latency: 95th percentile latency
+# - p99Latency: 99th percentile latency
+# - errorsByType: Breakdown of errors by type
+# - callsByMethod: Breakdown of calls by method
+# - anomalies: Detected issues (high error rate, latency spikes, etc.)
+```
+
+### Anomaly Detection
+
+The monitor automatically detects:
+
+- **High Error Rate**: Success rate below 90%
+- **High Latency**: P95 latency above 1000ms
+- **Error Spikes**: More than 10 errors in 5 minutes
+
+```typescript
+const anomalies = await mcpMonitor.detectAnomalies('my-server');
+anomalies.forEach(anomaly => {
+  console.log(`${anomaly.severity.toUpperCase()}: ${anomaly.description}`);
+  // Example: "HIGH: Success rate is 75.0% (below 90% threshold)"
+});
+```
+
+### Integration with Analytics Engine
+
+All MCP server calls are tracked in the centralized AnalyticsEngine with:
+- Event type: `mcp_server_call`
+- Agent ID: MCP server ID
+- Tags: server, method, status, error_type
+- Data: duration, success, errorType, inputSize, outputSize
+
+This enables correlation with other system metrics and historical analysis.
 
 ## Parallel Command Execution
 

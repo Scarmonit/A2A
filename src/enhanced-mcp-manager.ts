@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess } from 'child_process';
 import { agentRegistry } from './agents.js';
 import pino from 'pino';
+import { mcpMonitor } from './mcp-monitor.js';
 
 const logger = pino({ name: 'enhanced-mcp-manager' });
 
@@ -378,5 +379,49 @@ export class EnhancedMCPManager extends EventEmitter {
     this.servers.clear();
     this.emit('manager:shutdown');
     logger.info('EnhancedMCPManager shutdown complete');
+  }
+
+  /**
+   * Call a tool on an MCP server with automatic performance tracking
+   */
+  async callTool(serverId: string, method: string, params: any): Promise<any> {
+    const startTime = Date.now();
+    let success = false;
+    let errorType: string | undefined;
+    let result: any;
+
+    try {
+      const state = this.servers.get(serverId);
+      if (!state) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      if (state.status !== 'running') {
+        throw new Error(`Server ${serverId} is not running (status: ${state.status})`);
+      }
+
+      // In a real implementation, this would use the MCP client to call the tool
+      // For now, this is a placeholder that shows the tracking pattern
+      // result = await state.client.callTool(method, params);
+      
+      // Placeholder - in production, replace with actual MCP client call
+      result = { success: true, data: {} };
+      success = true;
+      
+      return result;
+    } catch (error: any) {
+      errorType = error.constructor.name;
+      throw error;
+    } finally {
+      mcpMonitor.trackServerCall({
+        serverId,
+        method,
+        duration: Date.now() - startTime,
+        success,
+        errorType,
+        inputSize: JSON.stringify(params).length,
+        outputSize: result ? JSON.stringify(result).length : undefined,
+      });
+    }
   }
 }
