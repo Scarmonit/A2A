@@ -400,6 +400,23 @@ npm run test:coverage
 
 ## Monitoring
 
+A2A includes a comprehensive observability stack with Prometheus and Grafana for real-time monitoring and alerting.
+
+### Quick Start
+
+```bash
+# Start the full monitoring stack
+docker compose up -d
+
+# Verify all services are running
+./verify-monitoring.sh
+```
+
+**Access Points:**
+- **Grafana Dashboard**: http://localhost:3001 (admin/admin)
+- **Prometheus**: http://localhost:9090
+- **Alert Manager**: http://localhost:9093
+
 ### Prometheus Metrics
 
 Available at `/metrics` endpoint (port 3000):
@@ -419,6 +436,15 @@ curl http://localhost:3000/healthz
 ```bash
 curl http://localhost:3000/api/agent?action=status
 ```
+
+### Complete Monitoring Guide
+
+See [docs/MONITORING.md](./docs/MONITORING.md) for:
+- Detailed setup instructions
+- Dashboard configuration
+- Alert rules and notifications
+- Performance tuning
+- Troubleshooting guide
 
 ## Documentation
 
