@@ -10,5 +10,6 @@
     "outDir": "dist",
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "scripts/**/*", "examples/**/*"]
+  "include": ["src/**/*", "scripts/**/*", "examples/**/*", "tests/integration/**/*"],
+  "exclude": ["tests/greenlet-integration.test.ts", "tests/enhanced-features.test.ts"]
 }
