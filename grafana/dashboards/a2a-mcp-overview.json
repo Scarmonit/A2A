@@ -1,0 +1,435 @@
+{
+  "dashboard": {
+    "title": "A2A MCP System Overview",
+    "uid": "a2a-mcp-overview",
+    "tags": ["a2a", "mcp", "agents"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "gauge",
+        "title": "Total Agents",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "a2a_agents_total",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 100,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "gauge",
+        "title": "Active Agents",
+        "gridPos": {
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "a2a_active_agents",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 30,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "graph",
+        "title": "Requests per Second",
+        "gridPos": {
+          "x": 12,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(mcp_server_calls_total[1m])",
+            "legendFormat": "{{ server }}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "reqps",
+            "label": "Requests/sec"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "type": "gauge",
+        "title": "Error Rate %",
+        "gridPos": {
+          "x": 18,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "(rate(mcp_server_calls_total{status=\"error\"}[5m]) / rate(mcp_server_calls_total[5m])) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 5,
+                  "color": "yellow"
+                },
+                {
+                  "value": 10,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "graph",
+        "title": "MCP Call Latency (P50, P95, P99)",
+        "gridPos": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(mcp_server_call_duration_seconds_bucket[5m]))",
+            "legendFormat": "P50 - {{ server }}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(mcp_server_call_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 - {{ server }}",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(mcp_server_call_duration_seconds_bucket[5m]))",
+            "legendFormat": "P99 - {{ server }}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Duration"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "type": "graph",
+        "title": "Memory Usage",
+        "gridPos": {
+          "x": 12,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "Memory (MB)",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "mbytes",
+            "label": "Memory"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "type": "graph",
+        "title": "CPU Usage",
+        "gridPos": {
+          "x": 0,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[1m]) * 100",
+            "legendFormat": "CPU %",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "CPU"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "type": "bargauge",
+        "title": "Calls by Server",
+        "gridPos": {
+          "x": 12,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum by(server) (rate(mcp_server_calls_total[5m]))",
+            "legendFormat": "{{ server }}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "gradient"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "type": "piechart",
+        "title": "Success vs Errors",
+        "gridPos": {
+          "x": 0,
+          "y": 24,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(mcp_server_calls_total{status=\"success\"}[5m]))",
+            "legendFormat": "Success",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(mcp_server_calls_total{status=\"error\"}[5m]))",
+            "legendFormat": "Error",
+            "refId": "B"
+          }
+        ],
+        "options": {
+          "pieType": "pie",
+          "displayLabels": ["name", "percent"]
+        }
+      },
+      {
+        "id": 10,
+        "type": "table",
+        "title": "Success Rate by Method",
+        "gridPos": {
+          "x": 8,
+          "y": 24,
+          "w": 16,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum by(method) (rate(mcp_server_calls_total{status=\"success\"}[5m])) / sum by(method) (rate(mcp_server_calls_total[5m])) * 100",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true
+              },
+              "indexByName": {
+                "method": 0,
+                "Value": 1
+              },
+              "renameByName": {
+                "method": "Method",
+                "Value": "Success Rate %"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "type": "graph",
+        "title": "WebSocket Connections",
+        "gridPos": {
+          "x": 0,
+          "y": 32,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "a2a_websocket_connections",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Connections"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "type": "graph",
+        "title": "Event Queue Size",
+        "gridPos": {
+          "x": 8,
+          "y": 32,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "a2a_event_queue_size",
+            "legendFormat": "Queue Size",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Events"
+          },
+          {
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "type": "stat",
+        "title": "Uptime",
+        "gridPos": {
+          "x": 16,
+          "y": 32,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "time() - process_start_time_seconds",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background"
+        }
+      }
+    ]
+  }
+}

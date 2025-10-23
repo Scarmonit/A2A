@@ -1,0 +1,67 @@
+groups:
+  - name: a2a_mcp_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighMCPErrorRate
+        expr: |
+          (
+            rate(mcp_server_calls_total{status="error"}[5m]) 
+            / 
+            rate(mcp_server_calls_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MCP server error rate ({{ $value | humanizePercentage }})"
+          description: "MCP server {{ $labels.server }} has error rate above 10% for 5 minutes"
+
+      # High latency alert
+      - alert: HighMCPLatency
+        expr: histogram_quantile(0.95, rate(mcp_server_call_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MCP server latency ({{ $value }}s)"
+          description: "P95 latency for {{ $labels.server }} is above 1 second"
+
+      # Agent disconnections
+      - alert: AgentDisconnected
+        expr: changes(a2a_agents_total[5m]) < -5
+        labels:
+          severity: critical
+        annotations:
+          summary: "Multiple agents disconnected"
+          description: "More than 5 agents disconnected in the last 5 minutes"
+
+      # Memory pressure
+      - alert: HighMemoryUsage
+        expr: (process_resident_memory_bytes / 1024 / 1024) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage ({{ $value }}MB)"
+          description: "A2A MCP server using more than 500MB memory for 10 minutes"
+
+  - name: a2a_recording_rules
+    interval: 15s
+    rules:
+      # Recording rule for request rate
+      - record: a2a:mcp_requests:rate5m
+        expr: rate(mcp_server_calls_total[5m])
+
+      # Recording rule for error rate
+      - record: a2a:mcp_errors:rate5m
+        expr: rate(mcp_server_calls_total{status="error"}[5m])
+
+      # Recording rule for success rate percentage
+      - record: a2a:mcp_success_rate:percentage
+        expr: |
+          (
+            sum(rate(mcp_server_calls_total{status="success"}[5m]))
+            /
+            sum(rate(mcp_server_calls_total[5m]))
+          ) * 100
