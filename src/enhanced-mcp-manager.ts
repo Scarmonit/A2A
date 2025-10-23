@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess } from 'child_process';
 import { agentRegistry } from './agents.js';
 import pino from 'pino';
+import { mcpMonitor } from './mcp-monitor.js';
 
 const logger = pino({ name: 'enhanced-mcp-manager' });
 
@@ -378,5 +379,57 @@ export class EnhancedMCPManager extends EventEmitter {
     this.servers.clear();
     this.emit('manager:shutdown');
     logger.info('EnhancedMCPManager shutdown complete');
+  }
+
+  /**
+   * Call a tool on an MCP server with automatic performance tracking
+   * 
+   * Note: This is a placeholder implementation that demonstrates the tracking pattern.
+   * In production, replace the placeholder logic with actual MCP client calls.
+   */
+  async callTool(serverId: string, method: string, params: any): Promise<any> {
+    const startTime = Date.now();
+    let success = false;
+    let errorType: string | undefined;
+    let result: any;
+
+    try {
+      const state = this.servers.get(serverId);
+      if (!state) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      if (state.status !== 'running') {
+        throw new Error(`Server ${serverId} is not running (status: ${state.status})`);
+      }
+
+      // Placeholder - In production, replace with actual MCP client call:
+      // result = await state.client.callTool(method, params);
+      
+      // Simulate realistic behavior for testing
+      if (Math.random() < 0.95) {
+        // 95% success rate by default
+        result = { success: true, data: { method, timestamp: Date.now() } };
+        success = true;
+      } else {
+        // Simulate occasional failures for testing
+        throw new Error('Simulated call failure');
+      }
+      
+      return result;
+    } catch (error: any) {
+      errorType = error.constructor.name;
+      throw error;
+    } finally {
+      mcpMonitor.trackServerCall({
+        serverId,
+        method,
+        duration: Date.now() - startTime,
+        success,
+        errorType,
+        inputSize: JSON.stringify(params).length,
+        outputSize: result ? JSON.stringify(result).length : undefined,
+      });
+    }
   }
 }
