@@ -81,6 +81,7 @@ export class RealtimeDashboardHandler extends EventEmitter {
   private broadcastPending: boolean = false;
   private lastBroadcastTime: number = 0;
   private readonly MIN_BROADCAST_INTERVAL = 100; // Minimum 100ms between broadcasts
+  private readonly MAX_CLIENT_BUFFER = 100000; // 100KB buffer threshold
   private messageQueue: Array<{ client: WebSocket; message: string }> = [];
   private readonly MAX_QUEUE_SIZE = 1000;
   private queueProcessInterval?: NodeJS.Timeout;
@@ -283,7 +284,7 @@ export class RealtimeDashboardHandler extends EventEmitter {
           },
           connections: {
             websocketClients: this.clients.size,
-            activeStreams: 0, // Could integrate with StreamHub if needed
+            activeStreams: 0, // Stream tracking not yet implemented
           },
           cache: aggregationCache.getStats(),
           websocket: {
@@ -374,8 +375,7 @@ export class RealtimeDashboardHandler extends EventEmitter {
       for (const client of this.clients) {
         if (client.readyState === WebSocket.OPEN) {
           // Check client bufferedAmount (backpressure indicator)
-          if (client.bufferedAmount < 100000) {
-            // < 100KB buffer
+          if (client.bufferedAmount < this.MAX_CLIENT_BUFFER) {
             client.send(message, (err) => {
               if (err) {
                 logger.error({ error: err.message }, 'WebSocket send error');
@@ -410,7 +410,7 @@ export class RealtimeDashboardHandler extends EventEmitter {
 
     const batch = this.messageQueue.splice(0, 50); // Process 50 at a time
     for (const { client, message } of batch) {
-      if (client.readyState === WebSocket.OPEN && client.bufferedAmount < 100000) {
+      if (client.readyState === WebSocket.OPEN && client.bufferedAmount < this.MAX_CLIENT_BUFFER) {
         client.send(message, (err) => {
           if (err) {
             logger.error({ error: err.message }, 'WebSocket send error from queue');
