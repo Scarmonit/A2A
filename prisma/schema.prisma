@@ -56,7 +56,7 @@ model Memory {
   context     Json?    // { task, user, environment, etc. }
 
   // Embeddings for vector search (to be used with Qdrant later)
-  embedding   Float[]? // Will be populated by vector store
+  embedding   Float[] @default([]) // Optional semantics handled via empty array
 
   // Relations
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)

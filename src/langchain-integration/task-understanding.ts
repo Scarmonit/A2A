@@ -294,7 +294,7 @@ export class TaskUnderstandingService {
       throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { response?: string };
     return data.response || '';
   }
 

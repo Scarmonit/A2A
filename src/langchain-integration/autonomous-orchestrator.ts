@@ -11,6 +11,7 @@
 import { taskUnderstandingService, ExecutionPlan, AgentRecommendation } from './task-understanding.js';
 import { AgentDescriptor, AgentRegistry } from '../agents.js';
 import { agentExecutor } from '../agent-executor.js';
+import { ToolExecutionContext } from '../tools.js';
 import pino from 'pino';
 import { z } from 'zod';
 
@@ -307,7 +308,14 @@ export class AutonomousOrchestrator {
 
         if (step.agentId && step.capability) {
           // Execute using agent
-          result = await agentExecutor.execute(step.agentId, step.capability, {});
+          const context: ToolExecutionContext = {
+            agentId: step.agentId,
+            requestId: `${execution.taskId}-${step.step}`,
+            permissions: ['*'],
+            limits: {},
+          };
+
+          result = await agentExecutor.executeAgent(step.agentId, step.capability, {}, context);
         } else {
           // No specific agent - log and continue
           result = { message: `Step completed: ${step.description}` };
