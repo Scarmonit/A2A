@@ -20,9 +20,17 @@ import client, { Counter, Gauge, Registry } from 'prom-client';
 // import { persistedAgentRegistry } from './db/persisted-agent-registry.js';
 // import { testDatabaseConnection, getDatabaseStats } from './db/prisma-client.js';
 
+// Optional: Autonomous agent deployment with LangChain (requires Ollama)
+// Uncomment these lines to enable autonomous task understanding and agent deployment
+// import { createAutonomousOrchestrator } from './langchain-integration/autonomous-orchestrator.js';
+// import { taskUnderstandingService } from './langchain-integration/task-understanding.js';
+
 // Export both registries for flexibility
 export { agentRegistry } from './agents.js';
 // export { persistedAgentRegistry } from './db/persisted-agent-registry.js';
+
+// Export autonomous orchestration (optional)
+// export { createAutonomousOrchestrator, taskUnderstandingService } from './langchain-integration/index.js';
 
 // In-memory requests state
 // ... trimmed for brevity in this edit interface ...
