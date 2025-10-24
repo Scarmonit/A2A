@@ -15,6 +15,9 @@ import pino from 'pino';
 import * as http from 'http';
 import client, { Counter, Gauge, Registry } from 'prom-client';
 
+// Zero-Click Automation System
+import { initializeZeroClick } from './zero-click-integration.js';
+
 // Optional: Database persistence (requires PostgreSQL)
 // Uncomment these lines and set USE_PERSISTED_REGISTRY=true in .env to enable
 // import { persistedAgentRegistry } from './db/persisted-agent-registry.js';
@@ -35,6 +38,9 @@ export { agentRegistry } from './agents.js';
 // In-memory requests state
 // ... trimmed for brevity in this edit interface ...
 // Assume the rest of the existing content remains unchanged up to the metrics server
+
+// Initialize Zero-Click Automation System
+initializeZeroClick();
 
 // metrics/health server
 if (parseInt(process.env.METRICS_PORT || '3000', 10) > 0) {
