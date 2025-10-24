@@ -1,0 +1,249 @@
+// Prisma schema for A2A Agent-to-Agent MCP Server
+// This schema provides persistent storage for agents, memories, and workflows
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Agent System Models
+// ============================================================================
+
+model Agent {
+  id          String   @id
+  name        String
+  version     String
+  category    String?
+  tags        String[] // PostgreSQL array type
+  enabled     Boolean  @default(true)
+  deployedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // JSON fields for flexible schema
+  capabilities Json     // AgentCapability[]
+  config       Json?    // Record<string, any>
+
+  // Relations
+  memories     Memory[]
+  workflows    Workflow[]
+
+  @@index([category])
+  @@index([enabled])
+  @@index([tags])
+}
+
+// ============================================================================
+// Memory System Models
+// ============================================================================
+
+model Memory {
+  id          String   @id @default(uuid())
+  agentId     String
+  type        MemoryType
+  content     String   @db.Text
+  importance  Float    @default(0.5)
+  timestamp   DateTime @default(now())
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  // Context information
+  context     Json?    // { task, user, environment, etc. }
+
+  // Embeddings for vector search (to be used with Qdrant later)
+  embedding   Float[]? // Will be populated by vector store
+
+  // Relations
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([type])
+  @@index([timestamp])
+  @@index([importance])
+}
+
+enum MemoryType {
+  CONVERSATION
+  PROCEDURAL
+  EPISODIC
+  SEMANTIC
+  TOOL_USAGE
+  PREFERENCE
+}
+
+// ============================================================================
+// Workflow System Models
+// ============================================================================
+
+model Workflow {
+  id          String         @id @default(uuid())
+  name        String
+  description String?
+  agentId     String?
+  status      WorkflowStatus @default(PENDING)
+  priority    Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Workflow definition
+  steps       WorkflowStep[]
+  context     Json?          // Shared workflow context
+  result      Json?          // Final workflow result
+  error       String?        @db.Text
+
+  // Relations
+  agent       Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([priority])
+  @@index([agentId])
+}
+
+model WorkflowStep {
+  id            String           @id @default(uuid())
+  workflowId    String
+  name          String
+  order         Int
+  status        WorkflowStepStatus @default(PENDING)
+  agentId       String?
+  capability    String?
+  retries       Int              @default(0)
+  maxRetries    Int              @default(3)
+
+  // Step configuration
+  input         Json?
+  output        Json?
+  error         String?          @db.Text
+
+  // Conditional execution
+  runIf         String?          // Expression to evaluate
+  skipIf        String?          // Expression to evaluate
+
+  // Dependencies
+  dependsOn     String[]         // Step IDs
+
+  // Timing
+  createdAt     DateTime         @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  // Relations
+  workflow      Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([order])
+}
+
+enum WorkflowStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+// ============================================================================
+// Agent Personality and Learning Models
+// ============================================================================
+
+model AgentPersonality {
+  id              String   @id
+  agentId         String   @unique
+  creativity      Float    @default(0.5)
+  cautiousness    Float    @default(0.5)
+  verbosity       Float    @default(0.5)
+  technicalDepth  Float    @default(0.5)
+  userFocus       Float    @default(0.5)
+
+  // Learning metrics
+  totalInteractions Int    @default(0)
+  positiveCount     Int    @default(0)
+  negativeCount     Int    @default(0)
+
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId])
+}
+
+// ============================================================================
+// Tool Usage Analytics
+// ============================================================================
+
+model ToolUsage {
+  id              String   @id @default(uuid())
+  agentId         String
+  toolName        String
+  executionTime   Int      // milliseconds
+  success         Boolean
+  timestamp       DateTime @default(now())
+
+  // Usage metrics
+  inputSize       Int?     // bytes
+  outputSize      Int?     // bytes
+
+  // Context
+  context         Json?
+  error           String?  @db.Text
+
+  @@index([agentId])
+  @@index([toolName])
+  @@index([timestamp])
+  @@index([success])
+}
+
+// ============================================================================
+// MCP Server Registry
+// ============================================================================
+
+model MCPServer {
+  id              String   @id
+  agentId         String
+  port            Int      @unique
+  status          String   // 'running' | 'stopped' | 'error'
+  startedAt       DateTime @default(now())
+  lastHealthCheck DateTime?
+
+  // Server configuration
+  config          Json?
+  metrics         Json?
+
+  @@index([agentId])
+  @@index([status])
+}
+
+// ============================================================================
+// Agent Communication Logs
+// ============================================================================
+
+model AgentCommunication {
+  id              String   @id @default(uuid())
+  fromAgentId     String
+  toAgentId       String
+  messageType     String   // 'tool_call' | 'resource_request' | 'prompt'
+  payload         Json
+  response        Json?
+  timestamp       DateTime @default(now())
+  duration        Int?     // milliseconds
+  success         Boolean  @default(true)
+
+  @@index([fromAgentId])
+  @@index([toAgentId])
+  @@index([timestamp])
+  @@index([messageType])
+}
