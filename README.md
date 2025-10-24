@@ -32,6 +32,17 @@ An Agent-to-Agent Model Context Protocol (MCP) server built with TypeScript, fea
 
 📖 **[Complete Production Features Guide](./docs/PRODUCTION_FEATURES.md)**
 
+### Zero-Click Automation ⚡
+
+- **Event-Driven Automation**: Automatically trigger agents based on events (webhooks, schedules, file changes, metrics)
+- **Proactive Agent Suggestions**: AI-powered suggestions with pattern learning and confidence scoring
+- **Smart Execution**: Auto-approve trusted operations, manual approval for sensitive tasks
+- **Agent Chaining**: Chain multiple agents together for complex workflows
+- **Condition Monitoring**: Watch system conditions and react proactively
+- **Pattern Learning**: Learn from execution history to suggest optimizations
+
+📖 **[Complete Zero-Click Automation Guide](./docs/ZERO_CLICK_GUIDE.md)**
+
 ## Parallel Command Execution
 
 The A2A server includes a powerful parallel command executor built with [execa](https://github.com/sindresorhus/execa), enabling you to run multiple commands concurrently using Promise.all.
@@ -185,6 +196,8 @@ ws.onmessage = (event) => {
 
 ## Tools
 
+### Core Agent Tools
+
 - `list_agents` - List all available agents
 - `describe_agent` - Get detailed information about an agent
 - `open_session` - Open a new agent session
@@ -193,6 +206,18 @@ ws.onmessage = (event) => {
 - `handoff` - Hand off to another agent
 - `cancel` - Cancel ongoing operations
 - `get_status` - Get current operation status
+
+### Zero-Click Automation Tools
+
+- `zero_click_add_automation_rule` - Create event-driven automation rules
+- `zero_click_add_monitor` - Add proactive condition monitors
+- `zero_click_get_suggestions` - Get AI-powered suggestions
+- `zero_click_start_webhook_server` - Start webhook server for external events
+- `zero_click_add_schedule` - Add scheduled event triggers
+- `zero_click_watch_file` - Watch files for changes
+- `zero_click_monitor_metric` - Monitor system metrics
+
+📖 **[Complete Zero-Click Tools Reference](./docs/ZERO_CLICK_GUIDE.md#mcp-tools)**
 
 ## Transport
 

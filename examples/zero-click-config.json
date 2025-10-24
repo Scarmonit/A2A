@@ -1,0 +1,109 @@
+{
+  "rules": [
+    {
+      "name": "Auto-deploy on webhook",
+      "description": "Automatically deploy when receiving a deployment webhook",
+      "enabled": true,
+      "trigger": {
+        "eventType": "webhook",
+        "filter": "(event) => event.data.path === '/deploy'",
+        "debounceMs": 5000
+      },
+      "action": {
+        "agentId": "deployment-agent",
+        "capability": "deploy_application",
+        "inputMapping": "(event) => ({ environment: event.data.body.environment, branch: event.data.body.branch })"
+      },
+      "approval": {
+        "required": true,
+        "autoApprove": "(event) => event.data.body.environment === 'staging'"
+      }
+    },
+    {
+      "name": "Hourly health check",
+      "description": "Run health checks every hour",
+      "enabled": true,
+      "trigger": {
+        "eventType": "schedule"
+      },
+      "action": {
+        "agentId": "monitoring-agent",
+        "capability": "run_health_checks",
+        "inputMapping": "(event) => ({ timestamp: event.timestamp })"
+      },
+      "approval": {
+        "required": false
+      }
+    },
+    {
+      "name": "Config file change handler",
+      "description": "Reload configuration when config files change",
+      "enabled": true,
+      "trigger": {
+        "eventType": "file_watch",
+        "filter": "(event) => event.data.filename.endsWith('.config.json')"
+      },
+      "action": {
+        "agentId": "config-agent",
+        "capability": "reload_config",
+        "inputMapping": "(event) => ({ filename: event.data.filename, path: event.data.path })"
+      },
+      "approval": {
+        "required": false
+      }
+    },
+    {
+      "name": "High memory alert",
+      "description": "Alert when memory usage exceeds threshold",
+      "enabled": true,
+      "trigger": {
+        "eventType": "metric_threshold"
+      },
+      "action": {
+        "agentId": "alert-agent",
+        "capability": "send_alert",
+        "inputMapping": "(event) => ({ metric: event.data.metric, value: event.data.value, threshold: event.data.threshold })"
+      },
+      "approval": {
+        "required": false
+      }
+    },
+    {
+      "name": "Chain cleanup after deployment",
+      "description": "Run cleanup tasks after successful deployment",
+      "enabled": true,
+      "trigger": {
+        "eventType": "agent_completion",
+        "filter": "(event) => event.data.agentId === 'deployment-agent' && event.data.result.success"
+      },
+      "action": {
+        "agentId": "cleanup-agent",
+        "capability": "cleanup_old_deployments",
+        "inputMapping": "(event) => ({ environment: event.data.result.environment })"
+      },
+      "approval": {
+        "required": false
+      },
+      "chain": {
+        "onSuccess": [
+          {
+            "name": "Notify success",
+            "description": "Send success notification",
+            "enabled": true,
+            "trigger": {
+              "eventType": "agent_completion"
+            },
+            "action": {
+              "agentId": "notification-agent",
+              "capability": "send_notification",
+              "inputMapping": "(event) => ({ message: 'Deployment and cleanup completed successfully' })"
+            },
+            "approval": {
+              "required": false
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
