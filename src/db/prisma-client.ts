@@ -7,21 +7,108 @@
  * @see https://www.prisma.io/docs/guides/performance-and-optimization/connection-management
  */
 
-import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
+import {
+  getMissingDependencyError,
+  loadOptionalDependency,
+  isDependencyAvailable,
+} from '../utils/optional-dependencies.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', base: { service: 'prisma-client' } });
 
 // Global declaration for TypeScript
 declare global {
   // eslint-disable-next-line no-var
-  var __prisma: PrismaClient | undefined;
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+  var __prisma: PrismaClientLike | undefined;
+}
+
+interface PrismaModelDelegateLike {
+  findMany(args?: any): Promise<any[]>;
+  upsert(args: any): Promise<any>;
+  delete(args: any): Promise<any>;
+  count(args?: any): Promise<number>;
+}
+
+interface PrismaClientLike {
+  $disconnect(): Promise<void>;
+  $queryRaw<T = unknown>(query: TemplateStringsArray, ...values: any[]): Promise<T>;
+  $transaction<T = unknown>(operations: any): Promise<T>;
+  $on(event: string, handler: (...args: any[]) => void): void;
+  agent: PrismaModelDelegateLike;
+  memory: PrismaModelDelegateLike;
+  workflow: PrismaModelDelegateLike;
+  toolUsage: PrismaModelDelegateLike;
+}
+
+type PrismaClientConstructor = new (options?: any) => PrismaClientLike;
+
+const prismaModule = loadOptionalDependency<{ PrismaClient: PrismaClientConstructor }>('@prisma/client');
+const PrismaClient = prismaModule?.PrismaClient ?? null;
+export const prismaAvailable = isDependencyAvailable('@prisma/client') && PrismaClient !== null;
+
+function createUnavailableModel(modelName: string): PrismaModelDelegateLike {
+  const createError = () =>
+    getMissingDependencyError(
+      '@prisma/client',
+      `Database model "${modelName}" requires the "@prisma/client" package. Install it and run \`npx prisma generate\`.`
+    );
+
+  return {
+    async findMany() {
+      throw createError();
+    },
+    async upsert() {
+      throw createError();
+    },
+    async delete() {
+      throw createError();
+    },
+    async count() {
+      throw createError();
+    },
+  };
+}
+
+function createUnavailableClient(): PrismaClientLike {
+  const createError = () =>
+    getMissingDependencyError(
+      '@prisma/client',
+      'Database operations require the "@prisma/client" package. Install it with `npm install @prisma/client`.'
+    );
+
+  logger.warn(
+    'Prisma Client is not available. Database features will throw informative errors until the dependency is installed.'
+  );
+
+  return {
+    async $disconnect() {
+      throw createError();
+    },
+    async $queryRaw() {
+      throw createError();
+    },
+    async $transaction() {
+      throw createError();
+    },
+    $on() {
+      logger.warn('Prisma Client event listeners are unavailable because @prisma/client is not installed.');
+    },
+    agent: createUnavailableModel('agent'),
+    memory: createUnavailableModel('memory'),
+    workflow: createUnavailableModel('workflow'),
+    toolUsage: createUnavailableModel('toolUsage'),
+  };
 }
 
 /**
  * Create PrismaClient with logging configuration
  */
-function createPrismaClient(): PrismaClient {
+function createPrismaClient(): PrismaClientLike {
+  if (!PrismaClient) {
+    return createUnavailableClient();
+  }
+
   const logLevel = process.env.LOG_LEVEL || 'info';
 
   const prismaLogLevels: any[] = [];
@@ -78,6 +165,11 @@ if (process.env.NODE_ENV !== 'production') {
  * Call this during application shutdown
  */
 export async function disconnectDatabase() {
+  if (!prismaAvailable) {
+    logger.warn('Prisma Client is not available. Skipping database disconnect.');
+    return;
+  }
+
   try {
     await prisma.$disconnect();
     logger.info('Disconnected from database');
@@ -92,6 +184,11 @@ export async function disconnectDatabase() {
  * Useful for health checks
  */
 export async function testDatabaseConnection(): Promise<boolean> {
+  if (!prismaAvailable) {
+    logger.warn('Prisma Client is not available. Skipping database connection test.');
+    return false;
+  }
+
   try {
     await prisma.$queryRaw`SELECT 1`;
     return true;
@@ -105,6 +202,13 @@ export async function testDatabaseConnection(): Promise<boolean> {
  * Get database statistics
  */
 export async function getDatabaseStats() {
+  if (!prismaAvailable) {
+    throw getMissingDependencyError(
+      '@prisma/client',
+      'Cannot fetch database stats because Prisma Client is not installed. Install it and run `npx prisma generate`.'
+    );
+  }
+
   try {
     const [
       agentCount,
