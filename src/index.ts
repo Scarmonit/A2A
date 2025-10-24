@@ -15,6 +15,15 @@ import pino from 'pino';
 import * as http from 'http';
 import client, { Counter, Gauge, Registry } from 'prom-client';
 
+// Optional: Database persistence (requires PostgreSQL)
+// Uncomment these lines and set USE_PERSISTED_REGISTRY=true in .env to enable
+// import { persistedAgentRegistry } from './db/persisted-agent-registry.js';
+// import { testDatabaseConnection, getDatabaseStats } from './db/prisma-client.js';
+
+// Export both registries for flexibility
+export { agentRegistry } from './agents.js';
+// export { persistedAgentRegistry } from './db/persisted-agent-registry.js';
+
 // In-memory requests state
 // ... trimmed for brevity in this edit interface ...
 // Assume the rest of the existing content remains unchanged up to the metrics server
