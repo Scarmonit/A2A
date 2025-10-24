@@ -7,16 +7,21 @@
  */
 
 import { AgentRegistry, AgentDescriptor, AgentFilter } from '../agents.js';
-import { prisma } from './prisma-client.js';
+import { prisma, prismaAvailable } from './prisma-client.js';
 import pino from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', base: { service: 'persisted-agent-registry' } });
 
 export class PersistedAgentRegistry extends AgentRegistry {
-  private syncEnabled = true;
+  private syncEnabled = prismaAvailable;
 
   constructor() {
     super();
+    if (!prismaAvailable) {
+      logger.warn('Prisma Client not detected. PersistedAgentRegistry will run in memory-only mode.');
+      return;
+    }
+
     // Load agents from database on initialization
     this.loadFromDatabase().catch(error => {
       logger.error({ error }, 'Failed to load agents from database during initialization');
@@ -27,6 +32,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Load all agents from database into memory
    */
   private async loadFromDatabase(): Promise<void> {
+    if (!prismaAvailable) {
+      logger.warn('Prisma Client not available. Skipping load from database.');
+      return;
+    }
+
     try {
       logger.info('Loading agents from database...');
 
@@ -72,7 +82,7 @@ export class PersistedAgentRegistry extends AgentRegistry {
   override deploy(agent: AgentDescriptor): boolean {
     const result = super.deploy(agent);
 
-    if (result && this.syncEnabled) {
+    if (result && this.syncEnabled && prismaAvailable) {
       this.saveToDatabase(agent).catch(error => {
         logger.error({ error, agentId: agent.id }, 'Failed to save agent to database');
       });
@@ -87,7 +97,7 @@ export class PersistedAgentRegistry extends AgentRegistry {
   override deployBatch(agentList: AgentDescriptor[]): { success: number; failed: number; errors: string[] } {
     const result = super.deployBatch(agentList);
 
-    if (this.syncEnabled && result.success > 0) {
+    if (this.syncEnabled && result.success > 0 && prismaAvailable) {
       // Get successfully deployed agents
       const deployed = agentList.slice(0, result.success);
 
@@ -105,7 +115,7 @@ export class PersistedAgentRegistry extends AgentRegistry {
   override update(agentId: string, updates: Partial<AgentDescriptor>): boolean {
     const result = super.update(agentId, updates);
 
-    if (result && this.syncEnabled) {
+    if (result && this.syncEnabled && prismaAvailable) {
       const agent = this.get(agentId);
       if (agent) {
         this.saveToDatabase(agent).catch(error => {
@@ -123,7 +133,7 @@ export class PersistedAgentRegistry extends AgentRegistry {
   override remove(agentId: string): boolean {
     const result = super.remove(agentId);
 
-    if (result && this.syncEnabled) {
+    if (result && this.syncEnabled && prismaAvailable) {
       this.deleteFromDatabase(agentId).catch(error => {
         logger.error({ error, agentId }, 'Failed to delete agent from database');
       });
@@ -136,6 +146,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Save single agent to database (upsert)
    */
   private async saveToDatabase(agent: AgentDescriptor): Promise<void> {
+    if (!prismaAvailable) {
+      logger.debug({ agentId: agent.id }, 'Prisma not available. Skipping database persistence for agent.');
+      return;
+    }
+
     try {
       await prisma.agent.upsert({
         where: { id: agent.id },
@@ -172,6 +187,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Save multiple agents to database (batch upsert)
    */
   private async saveBatchToDatabase(agents: AgentDescriptor[]): Promise<void> {
+    if (!prismaAvailable) {
+      logger.debug({ count: agents.length }, 'Prisma not available. Skipping batch persistence.');
+      return;
+    }
+
     try {
       // Prisma doesn't have a native upsert many, so we use transactions
       await prisma.$transaction(
@@ -213,6 +233,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Delete agent from database
    */
   private async deleteFromDatabase(agentId: string): Promise<void> {
+    if (!prismaAvailable) {
+      logger.debug({ agentId }, 'Prisma not available. Skipping database deletion.');
+      return;
+    }
+
     try {
       await prisma.agent.delete({
         where: { id: agentId },
@@ -230,6 +255,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Useful for manual backups or migrations
    */
   async syncToDatabase(): Promise<void> {
+    if (!prismaAvailable) {
+      logger.warn('Prisma Client not available. Skipping sync to database.');
+      return;
+    }
+
     try {
       const allAgents = this.list();
       await this.saveBatchToDatabase(allAgents);
@@ -245,6 +275,11 @@ export class PersistedAgentRegistry extends AgentRegistry {
    * Replaces in-memory state with database state
    */
   async reloadFromDatabase(): Promise<void> {
+    if (!prismaAvailable) {
+      logger.warn('Prisma Client not available. Skipping reload from database.');
+      return;
+    }
+
     // Clear in-memory state
     this.syncEnabled = false;
 

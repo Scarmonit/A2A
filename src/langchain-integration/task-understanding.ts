@@ -7,10 +7,10 @@
  * This module provides TRUE autonomous agent deployment based on task analysis.
  */
 
-import { PromptTemplate } from '@langchain/core/prompts';
 import { z } from 'zod';
 import pino from 'pino';
 import { AgentDescriptor, AgentFilter } from '../agents.js';
+import { loadOptionalDependency } from '../utils/optional-dependencies.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', base: { service: 'task-understanding' } });
 
@@ -85,7 +85,31 @@ export type ExecutionPlan = z.infer<typeof ExecutionPlanSchema>;
 // Task Understanding Prompts
 // ============================================================================
 
-const TASK_ANALYSIS_PROMPT = PromptTemplate.fromTemplate(`
+type PromptTemplateModule = {
+  PromptTemplate: {
+    fromTemplate(template: string): {
+      format(variables: Record<string, unknown>): Promise<string>;
+    };
+  };
+};
+
+let promptModule: PromptTemplateModule | null | undefined;
+
+function getPromptModule(): PromptTemplateModule | null {
+  if (promptModule !== undefined) {
+    return promptModule;
+  }
+
+  promptModule = loadOptionalDependency<PromptTemplateModule>('@langchain/core/prompts');
+
+  if (!promptModule) {
+    logger.warn('LangChain PromptTemplate module not found. Falling back to basic string interpolation for prompts.');
+  }
+
+  return promptModule;
+}
+
+const TASK_ANALYSIS_PROMPT_TEMPLATE = `
 You are an expert AI task analyst. Analyze the following task description and extract structured information.
 
 Task: {task}
@@ -108,9 +132,9 @@ Analyze this task and respond with a JSON object containing:
 5. estimatedSteps: Number of steps (integer)
 
 Respond ONLY with valid JSON, no other text.
-`);
+`;
 
-const AGENT_SELECTION_PROMPT = PromptTemplate.fromTemplate(`
+const AGENT_SELECTION_PROMPT_TEMPLATE = `
 You are an agent selection expert. Given a task and available agents, determine the best agents for the job.
 
 Task Domain: {domain}
@@ -128,7 +152,41 @@ For each relevant agent, provide:
 Return a JSON array of agent recommendations, sorted by score (highest first).
 Include only agents with score >= 0.3.
 Respond ONLY with valid JSON array, no other text.
-`);
+`;
+
+function serializeVariable(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return String(value ?? '');
+}
+
+async function formatPrompt(
+  template: string,
+  variables: Record<string, unknown>
+): Promise<string> {
+  const module = getPromptModule();
+
+  if (module?.PromptTemplate) {
+    try {
+      const formatter = module.PromptTemplate.fromTemplate(template);
+      return await formatter.format(variables);
+    } catch (error) {
+      logger.warn({ error }, 'Failed to format prompt using LangChain. Falling back to manual interpolation.');
+    }
+  }
+
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => serializeVariable(variables[key]));
+}
 
 // ============================================================================
 // Task Understanding Service
@@ -154,7 +212,7 @@ export class TaskUnderstandingService {
       logger.info({ task: taskDescription }, 'Analyzing task');
 
       // Format prompt
-      const prompt = await TASK_ANALYSIS_PROMPT.format({ task: taskDescription });
+      const prompt = await formatPrompt(TASK_ANALYSIS_PROMPT_TEMPLATE, { task: taskDescription });
 
       // Call Ollama for analysis
       const response = await this.callOllama(prompt);
@@ -199,7 +257,7 @@ export class TaskUnderstandingService {
       }));
 
       // Format prompt
-      const prompt = await AGENT_SELECTION_PROMPT.format({
+      const prompt = await formatPrompt(AGENT_SELECTION_PROMPT_TEMPLATE, {
         domain: requirements.domain,
         actions: requirements.actions.join(', '),
         capabilities: requirements.requiredCapabilities.join(', '),
