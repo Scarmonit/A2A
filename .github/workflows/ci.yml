@@ -29,11 +29,9 @@ jobs:
 
       - name: Run ESLint
         run: npx eslint src/**/*.ts --max-warnings 0
-        continue-on-error: true
 
       - name: Check code formatting with Prettier
         run: npx prettier --check "src/**/*.ts" "tests/**/*.ts"
-        continue-on-error: true
 
   build:
     name: Build Project

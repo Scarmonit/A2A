@@ -125,14 +125,29 @@ export class TelemetryProvider extends EventEmitter {
   private activeSpans = new Map<string, Span>();
   private serviceName: string;
   private endpoint?: string;
+  private cleanupTimer?: NodeJS.Timeout;
+  private cleanupInterval: number;
+  private maxTraceAge: number;
 
-  constructor(config?: { serviceName?: string; endpoint?: string }) {
+  constructor(config?: {
+    serviceName?: string;
+    endpoint?: string;
+    cleanupInterval?: number; // How often to run cleanup (ms), default 5 minutes
+    maxTraceAge?: number; // Max age of traces to keep (ms), default 1 hour
+  }) {
     super();
     this.serviceName = config?.serviceName || 'a2a-mcp-server';
     this.endpoint = config?.endpoint || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    this.cleanupInterval = config?.cleanupInterval || 300000; // 5 minutes
+    this.maxTraceAge = config?.maxTraceAge || 3600000; // 1 hour
 
     logger.info(
-      { serviceName: this.serviceName, endpoint: this.endpoint },
+      {
+        serviceName: this.serviceName,
+        endpoint: this.endpoint,
+        cleanupInterval: this.cleanupInterval,
+        maxTraceAge: this.maxTraceAge
+      },
       'TelemetryProvider initialized'
     );
   }
@@ -153,6 +168,9 @@ export class TelemetryProvider extends EventEmitter {
     // });
     //
     // await sdk.start();
+
+    // Start automatic cleanup timer to prevent memory leaks
+    this.startAutoCleanup();
 
     logger.info('Telemetry initialized (mock mode)');
   }
@@ -300,9 +318,44 @@ export class TelemetryProvider extends EventEmitter {
   }
 
   /**
+   * Start automatic cleanup timer to prevent memory leaks
+   */
+  private startAutoCleanup(): void {
+    if (this.cleanupTimer) {
+      return; // Already running
+    }
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanup(this.maxTraceAge);
+    }, this.cleanupInterval);
+
+    // Don't prevent process from exiting
+    this.cleanupTimer.unref();
+
+    logger.info(
+      { cleanupInterval: this.cleanupInterval, maxTraceAge: this.maxTraceAge },
+      'Automatic trace cleanup started'
+    );
+  }
+
+  /**
+   * Stop automatic cleanup timer
+   */
+  private stopAutoCleanup(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+      logger.info('Automatic trace cleanup stopped');
+    }
+  }
+
+  /**
    * Shutdown telemetry
    */
   async shutdown(): Promise<void> {
+    // Stop automatic cleanup
+    this.stopAutoCleanup();
+
     // await this.sdk?.shutdown();
     this.traces.clear();
     this.activeSpans.clear();

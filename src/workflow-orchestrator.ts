@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pino from 'pino';
 import { agentRegistry } from './agents.js';
+import { SafeExpressionEvaluator } from './infrastructure/safe-expression-evaluator.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -384,12 +385,12 @@ export class WorkflowOrchestrator {
   }
   
   private evaluateExpression(expression: string, context: Record<string, any>): boolean {
-    try {
-      const func = new Function(...Object.keys(context), `return ${expression}`);
-      return Boolean(func(...Object.values(context)));
-    } catch {
+    // Use safe expression evaluator to prevent arbitrary code execution
+    if (!SafeExpressionEvaluator.isSafe(expression)) {
+      logger.warn({ expression }, 'Unsafe expression detected, rejecting');
       return false;
     }
+    return SafeExpressionEvaluator.evaluate(expression, context);
   }
   
   private async executeAgentCapability(

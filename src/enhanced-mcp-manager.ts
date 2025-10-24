@@ -135,14 +135,28 @@ export class EnhancedMCPManager extends EventEmitter {
     }
 
     if (state.process) {
-      state.process.kill('SIGTERM');
-      
-      // Force kill after 5 seconds if not stopped
-      setTimeout(() => {
-        if (state.process && !state.process.killed) {
-          state.process.kill('SIGKILL');
+      // Wait for the process to actually exit
+      await new Promise<void>((resolve) => {
+        if (!state.process) {
+          resolve();
+          return;
         }
-      }, 5000);
+
+        const killTimeout = setTimeout(() => {
+          if (state.process && !state.process.killed) {
+            logger.warn({ serverId: id }, 'Force killing server after timeout');
+            state.process.kill('SIGKILL');
+          }
+        }, 5000);
+
+        state.process.once('exit', () => {
+          clearTimeout(killTimeout);
+          resolve();
+        });
+
+        // Send graceful termination signal
+        state.process.kill('SIGTERM');
+      });
     }
 
     state.status = 'stopped';

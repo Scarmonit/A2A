@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { SafeValueEvaluator } from './infrastructure/safe-expression-evaluator.js';
 
 const execAsync = promisify(exec);
 
@@ -416,13 +417,9 @@ export { main, Result };
   }
   
   private evaluateExpression(expression: string, context: any): any {
-    // Simple expression evaluation - in production, use a proper expression parser
-    try {
-      const func = new Function(...Object.keys(context), `return ${expression}`);
-      return func(...Object.values(context));
-    } catch {
-      return false;
-    }
+    // Use safe value evaluator to prevent arbitrary code execution
+    // Only supports property access, no operations
+    return SafeValueEvaluator.resolve(expression, context);
   }
 }
 
