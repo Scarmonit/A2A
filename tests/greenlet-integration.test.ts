@@ -6,10 +6,17 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { GreenletBridgeAdapter } from '../dist/agents/greenlet-bridge-adapter.js';
-import { GreenletProcessPool } from '../dist/agents/greenlet-process-pool.js';
+import { spawnSync } from 'node:child_process';
+import { GreenletBridgeAdapter } from '../dist/src/agents/greenlet-bridge-adapter.js';
+import { GreenletProcessPool } from '../dist/src/agents/greenlet-process-pool.js';
 
-describe('Greenlet Bridge Adapter', () => {
+const pythonDependencyCheck = spawnSync('python3', ['-c', 'import greenlet'], {
+  stdio: 'ignore'
+});
+
+const describeIfGreenletAvailable = pythonDependencyCheck.status === 0 ? describe : describe.skip;
+
+describeIfGreenletAvailable('Greenlet Bridge Adapter', () => {
   let adapter: GreenletBridgeAdapter;
   
   before(async () => {
@@ -63,7 +70,7 @@ describe('Greenlet Bridge Adapter', () => {
   });
 });
 
-describe('Greenlet Process Pool', () => {
+describeIfGreenletAvailable('Greenlet Process Pool', () => {
   let pool: GreenletProcessPool;
   
   after(async () => {
