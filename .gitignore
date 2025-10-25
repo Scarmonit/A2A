@@ -1,6 +1,7 @@
 .vercel
 node_modules/
 dist/
+demo-dist/
 *.pyc
 __pycache__/
 .pytest_cache/
