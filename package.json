@@ -45,6 +45,7 @@
     "continue:test": "npm run build && node dist/tests/continue-test.js"
   },
   "dependencies": {
+    "@continuedev/llm-info": "^0.1.0",
     "@langchain/core": "^0.3.26",
     "@modelcontextprotocol/sdk": "^1.5.0",
     "@prisma/client": "^6.18.0",
