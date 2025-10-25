@@ -1,9 +1,16 @@
+# Railway Configuration for A2A MCP Server
+#
+# This is a base configuration. For two-service deployment:
+# - Use railway-ws.json for WebSocket service
+# - Use railway-api.json for API/health service
+#
+# See RAILWAY_SETUP.md for complete deployment guide
+
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm run build && npm run start"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
