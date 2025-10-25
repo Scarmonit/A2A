@@ -1,14 +1,12 @@
 name: Greenlet A2A Integration Tests
 on:
   push:
-    branches: [main, copilot/integrate-greenlet-a2a-enhancements]
+    branches: [master, copilot/integrate-greenlet-a2a-enhancements]
   pull_request:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   test-python:
     name: Python Tests
@@ -48,7 +46,6 @@ jobs:
             pytest-results/
             *.log
           retention-days: 7
-
   test-nodejs:
     name: Node.js Tests
     runs-on: ubuntu-latest
@@ -88,7 +85,6 @@ jobs:
             test-results/
             *.log
           retention-days: 7
-
   test-integration:
     name: Integration Tests (Python + Node.js)
     runs-on: ubuntu-latest
