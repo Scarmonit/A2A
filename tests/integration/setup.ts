@@ -55,8 +55,8 @@ export class TestEnvironment {
 
     // Clear test data
     auditLogger.clear();
-    mcpMonitor.clear();
-    aggregationCache.clear();
+    mcpMonitor.clearHistory(new Date(0)); // Clear all history
+    aggregationCache.clearAll();
 
     // Give some time for cleanup
     await new Promise((resolve) => setTimeout(resolve, 500));

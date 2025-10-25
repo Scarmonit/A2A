@@ -71,7 +71,13 @@ describe('E2E Monitoring and Observability', () => {
         timestamp: new Date(),
       });
 
-      aggregationCache.set(`key${i}`, { value: i });
+      aggregationCache.setCachedMetrics(`key${i}`, {
+        totalRequests: i,
+        successRate: 0.9,
+        averageLatency: 100,
+        activeAgents: 1,
+        timestamp: Date.now()
+      }, 60000);
     });
 
     await Promise.all(operations.map((op) => op()));
@@ -85,21 +91,27 @@ describe('E2E Monitoring and Observability', () => {
   });
 
   it('should provide accurate cache statistics', async () => {
-    aggregationCache.clear();
+    aggregationCache.clearAll();
 
     // Add some cache entries
     for (let i = 0; i < 10; i++) {
-      aggregationCache.set(`test-key-${i}`, { data: i });
+      aggregationCache.setCachedMetrics(`test-key-${i}`, {
+        totalRequests: i * 10,
+        successRate: 0.95,
+        averageLatency: 50 + i,
+        activeAgents: i + 1,
+        timestamp: Date.now()
+      }, 60000);
     }
 
     // Access some entries (creates hits)
     for (let i = 0; i < 5; i++) {
-      aggregationCache.get(`test-key-${i}`);
+      aggregationCache.getCachedMetrics(`test-key-${i}`);
     }
 
     // Access non-existent entries (creates misses)
     for (let i = 10; i < 15; i++) {
-      aggregationCache.get(`test-key-${i}`);
+      aggregationCache.getCachedMetrics(`test-key-${i}`);
     }
 
     const stats = aggregationCache.getStats();
@@ -111,7 +123,7 @@ describe('E2E Monitoring and Observability', () => {
   });
 
   it('should handle server monitoring metrics', async () => {
-    mcpMonitor.clearHistory();
+    mcpMonitor.clearHistory(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
     // Track some server calls
     for (let i = 0; i < 5; i++) {
@@ -124,12 +136,13 @@ describe('E2E Monitoring and Observability', () => {
       });
     }
 
-    const metrics = mcpMonitor.getMetrics();
-    assert.ok(metrics['test-server'], 'Should have metrics for test-server');
+    const metrics = mcpMonitor.getServerMetrics('test-server');
+    assert.ok(metrics, 'Should have metrics for test-server');
 
-    const serverMetrics = metrics['test-server'];
-    assert.ok(serverMetrics.totalCalls === 5, `Should have 5 total calls, got ${serverMetrics.totalCalls}`);
-    assert.ok(serverMetrics.successfulCalls === 4, `Should have 4 successful calls, got ${serverMetrics.successfulCalls}`);
-    assert.ok(serverMetrics.failedCalls === 1, `Should have 1 failed call, got ${serverMetrics.failedCalls}`);
+    assert.ok(metrics.totalCalls === 5, `Should have 5 total calls, got ${metrics.totalCalls}`);
+    const successfulCalls = Math.round(metrics.totalCalls * metrics.successRate);
+    const failedCalls = metrics.totalCalls - successfulCalls;
+    assert.ok(successfulCalls === 4, `Should have 4 successful calls, got ${successfulCalls}`);
+    assert.ok(failedCalls === 1, `Should have 1 failed call, got ${failedCalls}`);
   });
 });
