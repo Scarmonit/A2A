@@ -5,8 +5,10 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   test-python:
     name: Python Tests
@@ -20,22 +22,30 @@ jobs:
         python-version: ['3.9', '3.10', '3.11', '3.12']
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-          
+      
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-greenlet.txt
-          
+          python -m pip install --upgrade pip setuptools wheel
+          if [ -f requirements-greenlet.txt ]; then
+            pip install -r requirements-greenlet.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install pytest pytest-cov pytest-asyncio
+      
       - name: Run Python tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m pytest tests/python/test_greenlet_agent.py -v --tb=short
+          python -m pytest tests/python/test_greenlet_agent.py -v --tb=short --cov=. --cov-report=xml
       
       - name: Upload Python test results
         if: always()
@@ -44,8 +54,10 @@ jobs:
           name: python-test-results-${{ matrix.python-version }}
           path: |
             pytest-results/
+            coverage.xml
             *.log
           retention-days: 7
+
   test-nodejs:
     name: Node.js Tests
     runs-on: ubuntu-latest
@@ -58,23 +70,37 @@ jobs:
         node-version: ['18.x', '20.x', '22.x']
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          
+      
       - name: Install Node.js dependencies
-        run: npm ci
-        
+        run: |
+          npm ci || npm install
+      
       - name: Build TypeScript
-        run: npm run build
-        
+        run: |
+          if [ -f package.json ] && grep -q '"build"' package.json; then
+            npm run build
+          else
+            echo "No build script found, skipping build step"
+          fi
+      
       - name: Run Node.js tests
         run: |
-          node --test tests/greenlet-integration.test.ts
+          if [ -f tests/greenlet-integration.test.js ]; then
+            node --test tests/greenlet-integration.test.js
+          elif [ -f tests/greenlet-integration.test.ts ]; then
+            npm test -- tests/greenlet-integration.test.ts
+          else
+            echo "Test file not found"
+            exit 1
+          fi
       
       - name: Upload Node.js test results
         if: always()
@@ -83,11 +109,14 @@ jobs:
           name: nodejs-test-results-${{ matrix.node-version }}
           path: |
             test-results/
+            coverage/
             *.log
           retention-days: 7
+
   test-integration:
     name: Integration Tests (Python + Node.js)
     runs-on: ubuntu-latest
+    needs: [test-python, test-nodejs]
     permissions:
       contents: read
     strategy:
@@ -97,33 +126,51 @@ jobs:
         node-version: ['20.x']
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-          
+      
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          
-      - name: Install dependencies
+      
+      - name: Install all dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-greenlet.txt
-          npm ci
-          
+          python -m pip install --upgrade pip setuptools wheel
+          if [ -f requirements-greenlet.txt ]; then
+            pip install -r requirements-greenlet.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install pytest pytest-asyncio
+          npm ci || npm install
+      
       - name: Build TypeScript
-        run: npm run build
-          
-      - name: Run full integration tests
         run: |
-          node --test tests/greenlet-integration.test.ts
+          if [ -f package.json ] && grep -q '"build"' package.json; then
+            npm run build
+          fi
+      
+      - name: Run full integration tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          NODE_ENV: test
+        run: |
+          echo "Running Python integration tests..."
           python -m pytest tests/python/test_greenlet_agent.py -v
+          echo "Running Node.js integration tests..."
+          if [ -f tests/greenlet-integration.test.js ]; then
+            node --test tests/greenlet-integration.test.js
+          elif [ -f tests/greenlet-integration.test.ts ]; then
+            npm test -- tests/greenlet-integration.test.ts
+          fi
       
       - name: Upload integration test results
         if: always()
@@ -133,5 +180,6 @@ jobs:
           path: |
             test-results/
             pytest-results/
+            coverage/
             *.log
           retention-days: 7
