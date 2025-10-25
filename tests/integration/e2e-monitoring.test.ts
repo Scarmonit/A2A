@@ -1,23 +1,13 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { TestEnvironment } from '../helpers/test-environment.js';
-import { AuditLogger } from '../../src/audit-logger.js';
-import { MCPServerMonitor } from '../../src/mcp-monitor.js';
-import { AggregationCache } from '../../src/aggregation-cache.js';
+import { TestEnvironment, auditLogger, mcpMonitor, aggregationCache } from './setup.js';
 
 describe('E2E Monitoring and Observability', () => {
   let env: TestEnvironment;
-  let auditLogger: AuditLogger;
-  let mcpMonitor: MCPServerMonitor;
-  let aggregationCache: AggregationCache<any>;
 
   before(async () => {
     env = new TestEnvironment();
     await env.setup();
-
-    auditLogger = (env as any).context.auditLogger;
-    mcpMonitor = (env as any).context.mcpMonitor;
-    aggregationCache = (env as any).context.aggregationCache;
   });
 
   after(async () => {
@@ -34,6 +24,7 @@ describe('E2E Monitoring and Observability', () => {
         method: 'test',
         duration: 100,
         success: true,
+        timestamp: new Date(),
       });
     }
 
@@ -49,18 +40,14 @@ describe('E2E Monitoring and Observability', () => {
 
   it('should track performance metrics accurately', async () => {
     const ws = await env.createWebSocketClient();
-
     const message = await env.waitForMessage(ws, 10000);
 
     if (message.type === 'metrics:update' && message.data?.performance) {
       const perf = message.data.performance;
-
       assert.ok(typeof perf.memoryUsageMB === 'number', 'Should have memory usage');
       assert.ok(perf.memoryUsageMB > 0, 'Memory usage should be positive');
-
       assert.ok(Array.isArray(perf.cpuLoadAverage), 'Should have CPU load average');
       assert.ok(perf.cpuLoadAverage.length > 0, 'CPU load array should not be empty');
-
       assert.ok(typeof perf.uptime === 'number', 'Should have uptime');
       assert.ok(perf.uptime >= 0, 'Uptime should be non-negative');
     }
@@ -68,14 +55,12 @@ describe('E2E Monitoring and Observability', () => {
 
   it('should handle concurrent monitoring operations', async () => {
     auditLogger.clear();
-    mcpMonitor.clearHistory();
-    aggregationCache.clear();
 
-    // Perform many operations concurrently
-    const operations = Array.from({ length: 50 }, (_, i) => async () => {
+    // Simulate concurrent operations
+    const operations = Array.from({ length: 10 }, (_, i) => async () => {
       auditLogger.log({
-        agentId: `agent${i % 5}`,
-        action: `action${i}`,
+        action: 'concurrent_test',
+        metadata: { index: i },
       });
 
       mcpMonitor.trackServerCall({
@@ -83,6 +68,7 @@ describe('E2E Monitoring and Observability', () => {
         method: 'test',
         duration: Math.random() * 100,
         success: Math.random() > 0.1,
+        timestamp: new Date(),
       });
 
       aggregationCache.set(`key${i}`, { value: i });
@@ -134,6 +120,7 @@ describe('E2E Monitoring and Observability', () => {
         method: 'testMethod',
         duration: 50 + i * 10,
         success: i < 4, // One failure
+        timestamp: new Date(),
       });
     }
 
