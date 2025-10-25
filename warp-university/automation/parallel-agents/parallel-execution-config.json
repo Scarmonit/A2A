@@ -1,0 +1,333 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Warp University Parallel Execution Configuration",
+  "description": "Configuration schema for parallel agent execution workflows in the A2A framework",
+  "type": "object",
+  "version": "1.0.0",
+  
+  "orchestration": {
+    "maxConcurrentAgents": 10,
+    "enableInterAgentComm": true,
+    "enableResourceMonitoring": true,
+    "defaultTimeout": 30000,
+    "logLevel": "info",
+    "description": "Global orchestration settings for managing parallel agent execution"
+  },
+  
+  "parallelExecution": {
+    "strategies": [
+      {
+        "name": "promise-all",
+        "description": "Execute all agents simultaneously using Promise.all",
+        "useCase": "Maximum parallelism, wait for all agents to complete",
+        "errorHandling": "fail-fast",
+        "recommended": true
+      },
+      {
+        "name": "promise-allsettled",
+        "description": "Execute all agents simultaneously, collect all results regardless of failures",
+        "useCase": "Best-effort execution, continue on individual failures",
+        "errorHandling": "continue-on-error",
+        "recommended": false
+      },
+      {
+        "name": "promise-race",
+        "description": "Execute all agents simultaneously, return first completed result",
+        "useCase": "Competitive execution, fastest result wins",
+        "errorHandling": "first-result",
+        "recommended": false
+      },
+      {
+        "name": "sequential-batched",
+        "description": "Execute agents in sequential batches for controlled parallelism",
+        "useCase": "Resource-constrained environments, controlled load",
+        "errorHandling": "batch-level",
+        "recommended": false
+      }
+    ],
+    "defaultStrategy": "promise-all"
+  },
+  
+  "agentProfiles": [
+    {
+      "profileId": "data-processing",
+      "agentType": "DataProcessingAgent",
+      "priority": 1,
+      "timeout": 15000,
+      "retryPolicy": {
+        "maxRetries": 3,
+        "backoffMs": 1000,
+        "exponentialBackoff": true
+      },
+      "resources": {
+        "memoryLimitMB": 512,
+        "cpuWeight": 1.0
+      },
+      "description": "Profile for data processing agents that handle ETL operations"
+    },
+    {
+      "profileId": "analysis",
+      "agentType": "AnalysisAgent",
+      "priority": 2,
+      "timeout": 45000,
+      "retryPolicy": {
+        "maxRetries": 2,
+        "backoffMs": 2000,
+        "exponentialBackoff": true
+      },
+      "resources": {
+        "memoryLimitMB": 1024,
+        "cpuWeight": 2.0
+      },
+      "description": "Profile for analysis agents performing complex computations"
+    },
+    {
+      "profileId": "reporting",
+      "agentType": "ReportGeneratorAgent",
+      "priority": 3,
+      "timeout": 20000,
+      "retryPolicy": {
+        "maxRetries": 2,
+        "backoffMs": 1500,
+        "exponentialBackoff": false
+      },
+      "resources": {
+        "memoryLimitMB": 256,
+        "cpuWeight": 0.5
+      },
+      "description": "Profile for reporting agents that generate output documents"
+    }
+  ],
+  
+  "workflows": [
+    {
+      "workflowId": "standard-three-agent",
+      "name": "Standard Three Agent Parallel Workflow",
+      "description": "Executes three agents in parallel for comprehensive data processing, analysis, and reporting",
+      "agents": [
+        {
+          "agentId": "agent-1",
+          "profileId": "data-processing",
+          "params": {
+            "source": "api",
+            "format": "json",
+            "validation": true
+          }
+        },
+        {
+          "agentId": "agent-2",
+          "profileId": "analysis",
+          "params": {
+            "algorithm": "ml-based",
+            "depth": "deep",
+            "caching": true
+          }
+        },
+        {
+          "agentId": "agent-3",
+          "profileId": "reporting",
+          "params": {
+            "format": "pdf",
+            "template": "executive-summary",
+            "includeCharts": true
+          }
+        }
+      ],
+      "executionStrategy": "promise-all",
+      "timeout": 60000
+    },
+    {
+      "workflowId": "high-throughput",
+      "name": "High Throughput Parallel Workflow",
+      "description": "Optimized for maximum throughput with multiple parallel agents",
+      "agents": [
+        {
+          "agentId": "processor-1",
+          "profileId": "data-processing",
+          "params": { "batch": 1 }
+        },
+        {
+          "agentId": "processor-2",
+          "profileId": "data-processing",
+          "params": { "batch": 2 }
+        },
+        {
+          "agentId": "processor-3",
+          "profileId": "data-processing",
+          "params": { "batch": 3 }
+        }
+      ],
+      "executionStrategy": "promise-allsettled",
+      "timeout": 30000
+    },
+    {
+      "workflowId": "resilient-execution",
+      "name": "Resilient Parallel Workflow",
+      "description": "Fault-tolerant execution with automatic retry and fallback mechanisms",
+      "agents": [
+        {
+          "agentId": "primary-agent",
+          "profileId": "analysis",
+          "params": { "mode": "primary" }
+        },
+        {
+          "agentId": "backup-agent-1",
+          "profileId": "analysis",
+          "params": { "mode": "backup" }
+        },
+        {
+          "agentId": "backup-agent-2",
+          "profileId": "analysis",
+          "params": { "mode": "backup" }
+        }
+      ],
+      "executionStrategy": "promise-race",
+      "timeout": 45000,
+      "fallbackEnabled": true
+    }
+  ],
+  
+  "monitoring": {
+    "enableMetrics": true,
+    "metricsInterval": 5000,
+    "enableHealthChecks": true,
+    "healthCheckInterval": 10000,
+    "enablePerformanceTracing": true,
+    "traceDetailLevel": "detailed",
+    "description": "Monitoring and observability settings for parallel execution"
+  },
+  
+  "errorHandling": {
+    "globalRetryPolicy": {
+      "enabled": true,
+      "maxRetries": 3,
+      "backoffMs": 1000,
+      "exponentialBackoff": true,
+      "maxBackoffMs": 10000
+    },
+    "circuitBreaker": {
+      "enabled": true,
+      "failureThreshold": 5,
+      "resetTimeoutMs": 60000,
+      "halfOpenRequests": 3
+    },
+    "deadLetterQueue": {
+      "enabled": true,
+      "maxQueueSize": 100,
+      "retryFromQueue": true
+    },
+    "description": "Error handling and resilience configuration"
+  },
+  
+  "performance": {
+    "optimizations": {
+      "enableCaching": true,
+      "cacheSize": 1000,
+      "enableResultStreaming": false,
+      "enableLazyLoading": true,
+      "enableResourcePooling": true,
+      "poolSize": 10
+    },
+    "thresholds": {
+      "maxExecutionTimeMs": 120000,
+      "maxMemoryUsageMB": 2048,
+      "maxCpuUsagePercent": 80,
+      "maxConcurrentOperations": 50
+    },
+    "description": "Performance tuning and resource management settings"
+  },
+  
+  "communication": {
+    "messageQueue": {
+      "enabled": true,
+      "maxSize": 1000,
+      "priorityLevels": ["low", "medium", "high", "critical"],
+      "defaultPriority": "medium"
+    },
+    "eventBus": {
+      "enabled": true,
+      "bufferSize": 100,
+      "enableBroadcast": true
+    },
+    "description": "Inter-agent communication configuration"
+  },
+  
+  "integration": {
+    "a2aAgentPath": "../../../src/agents",
+    "customAgentLoaders": [],
+    "pluginPath": "./plugins",
+    "enableHotReload": false,
+    "description": "Integration settings with the A2A agent system"
+  },
+  
+  "examples": {
+    "basicThreeAgentExecution": {
+      "description": "Simple example of running three agents in parallel",
+      "code": "const executor = createThreeAgentExecutor(config); const result = await executor.executeParallel();"
+    },
+    "withRetryLogic": {
+      "description": "Execute with automatic retry on failures",
+      "code": "const result = await executor.executeWithRetry();"
+    },
+    "customWorkflow": {
+      "description": "Create a custom workflow with specific agent configurations",
+      "code": "const workflow = workflows.find(w => w.workflowId === 'standard-three-agent');"
+    }
+  },
+  
+  "warpUniversityPatterns": {
+    "patterns": [
+      {
+        "name": "Fan-Out, Fan-In",
+        "description": "Dispatch multiple agents simultaneously (fan-out), collect and aggregate results (fan-in)",
+        "benefits": ["Maximum parallelism", "Reduced latency", "Efficient resource utilization"],
+        "useCase": "When multiple independent operations can be performed concurrently"
+      },
+      {
+        "name": "Error Boundaries",
+        "description": "Isolate errors to prevent cascade failures across parallel agents",
+        "benefits": ["Fault isolation", "Improved reliability", "Graceful degradation"],
+        "useCase": "Critical systems requiring high availability"
+      },
+      {
+        "name": "Message Passing",
+        "description": "Decouple agents through asynchronous message-based communication",
+        "benefits": ["Loose coupling", "Scalability", "Flexibility"],
+        "useCase": "Complex workflows with inter-agent dependencies"
+      },
+      {
+        "name": "Resource Pooling",
+        "description": "Manage shared resources efficiently across parallel executions",
+        "benefits": ["Resource efficiency", "Cost optimization", "Performance consistency"],
+        "useCase": "Resource-constrained environments"
+      },
+      {
+        "name": "Circuit Breaker",
+        "description": "Prevent cascading failures by temporarily blocking failing operations",
+        "benefits": ["System stability", "Fast failure", "Automatic recovery"],
+        "useCase": "External service integrations with potential failures"
+      }
+    ],
+    "bestPractices": [
+      "Always implement error boundaries for parallel executions",
+      "Use Promise.all for independent operations requiring all results",
+      "Use Promise.allSettled when some failures are acceptable",
+      "Implement timeout mechanisms to prevent hanging operations",
+      "Monitor resource usage to prevent system overload",
+      "Use structured logging for debugging parallel executions",
+      "Implement retry logic with exponential backoff",
+      "Consider using circuit breakers for external dependencies",
+      "Profile and optimize based on actual workload patterns"
+    ]
+  },
+  
+  "metadata": {
+    "version": "1.0.0",
+    "lastUpdated": "2025-10-25",
+    "author": "Warp University Framework Team",
+    "license": "MIT",
+    "repository": "https://github.com/Scarmonit/A2A",
+    "documentation": "https://github.com/Scarmonit/A2A/wiki/parallel-execution",
+    "support": "https://github.com/Scarmonit/A2A/issues"
+  }
+}
