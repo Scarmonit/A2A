@@ -1,0 +1,461 @@
+# OpenSSH Automation Deployment for Kubernetes
+# This configuration creates a deployment for running distributed SSH automation agents
+# Best Practice: Use this for managing SSH connections to multiple remote servers
+
+---
+# ConfigMap: SSH Configuration
+# Stores SSH client configuration and known_hosts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openssh-config
+  namespace: default
+  labels:
+    app: openssh-automation
+data:
+  # SSH client configuration
+  ssh_config: |
+    # Global SSH client configuration
+    Host *
+      StrictHostKeyChecking accept-new
+      UserKnownHostsFile /etc/ssh/known_hosts
+      ServerAliveInterval 60
+      ServerAliveCountMax 3
+      ConnectTimeout 10
+      Compression yes
+      
+    # Example host configurations
+    Host production-*
+      User deploy
+      Port 22
+      
+    Host staging-*
+      User deploy
+      Port 22
+      
+  # Known hosts file (populate with your target servers)
+  known_hosts: |
+    # Add your known SSH host fingerprints here
+    # Example:
+    # production-server.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample...
+    # staging-server.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample...
+
+---
+# Secret: SSH Private Keys
+# Best Practice: Store SSH private keys securely
+# Create this secret manually using: kubectl create secret generic openssh-keys --from-file=id_rsa=/path/to/key
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openssh-keys
+  namespace: default
+  labels:
+    app: openssh-automation
+type: Opaque
+data:
+  # Base64 encoded SSH private key
+  # Replace with your actual base64-encoded private key
+  # Generate with: cat id_rsa | base64 -w 0
+  id_rsa: |
+    # YOUR_BASE64_ENCODED_PRIVATE_KEY_HERE
+  # Optional: separate keys for different environments
+  # id_rsa_production: |
+  #   YOUR_PRODUCTION_KEY_HERE
+  # id_rsa_staging: |
+  #   YOUR_STAGING_KEY_HERE
+
+---
+# Secret: SSH Passwords and Credentials
+# For servers that require password authentication
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openssh-credentials
+  namespace: default
+  labels:
+    app: openssh-automation
+type: Opaque
+stringData:
+  # Store credentials in key-value format
+  # Access via environment variables in the deployment
+  SSH_USER: "deploy"
+  # SSH_PASSWORD: "your-password-here"  # Not recommended, use keys instead
+
+---
+# Deployment: OpenSSH Automation Agent
+# Manages the SSH automation agent pods
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openssh-automation
+  namespace: default
+  labels:
+    app: openssh-automation
+    version: v1
+spec:
+  # Number of parallel SSH automation agents
+  # Scale based on workload requirements
+  replicas: 3
+  
+  selector:
+    matchLabels:
+      app: openssh-automation
+      
+  # Rolling update strategy for zero-downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+      
+  template:
+    metadata:
+      labels:
+        app: openssh-automation
+        version: v1
+      annotations:
+        # Restart pods when config changes
+        checksum/config: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+        
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        
+      containers:
+      - name: openssh-agent
+        # Using Alpine-based image with OpenSSH client
+        image: alpine:3.18
+        imagePullPolicy: IfNotPresent
+        
+        # Command to install SSH and keep container running
+        command: ["sh", "-c"]
+        args:
+          - |
+            apk add --no-cache openssh-client bash curl jq
+            mkdir -p /home/sshuser/.ssh
+            
+            # Set up SSH configuration
+            cp /etc/ssh-config/ssh_config /home/sshuser/.ssh/config
+            cp /etc/ssh-config/known_hosts /etc/ssh/known_hosts
+            
+            # Set up SSH keys with correct permissions
+            if [ -f /etc/ssh-keys/id_rsa ]; then
+              cp /etc/ssh-keys/id_rsa /home/sshuser/.ssh/id_rsa
+              chmod 600 /home/sshuser/.ssh/id_rsa
+            fi
+            
+            # Start SSH agent
+            eval $(ssh-agent -s)
+            if [ -f /home/sshuser/.ssh/id_rsa ]; then
+              ssh-add /home/sshuser/.ssh/id_rsa
+            fi
+            
+            echo "SSH Automation Agent ready"
+            echo "SSH Agent PID: $SSH_AGENT_PID"
+            
+            # Keep container running and ready for exec commands
+            # In production, replace with your actual automation script
+            while true; do
+              sleep 3600
+            done
+            
+        # Environment variables from secrets
+        env:
+        - name: SSH_USER
+          valueFrom:
+            secretKeyRef:
+              name: openssh-credentials
+              key: SSH_USER
+              
+        # Resource limits and requests
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+            
+        # Volume mounts for SSH configuration and keys
+        volumeMounts:
+        - name: ssh-config
+          mountPath: /etc/ssh-config
+          readOnly: true
+        - name: ssh-keys
+          mountPath: /etc/ssh-keys
+          readOnly: true
+        - name: ssh-workspace
+          mountPath: /home/sshuser
+          
+        # Liveness probe to ensure container is healthy
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "ssh-add -l || exit 0"
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          
+        # Readiness probe to ensure container is ready
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "test -f /home/sshuser/.ssh/config"
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          
+      # Volumes for SSH configuration and keys
+      volumes:
+      - name: ssh-config
+        configMap:
+          name: openssh-config
+          items:
+          - key: ssh_config
+            path: ssh_config
+          - key: known_hosts
+            path: known_hosts
+      - name: ssh-keys
+        secret:
+          secretName: openssh-keys
+          defaultMode: 0600
+      - name: ssh-workspace
+        emptyDir: {}
+        
+      # Node affinity for optimal placement
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - openssh-automation
+              topologyKey: kubernetes.io/hostname
+
+---
+# Service: OpenSSH Automation (ClusterIP)
+# Provides internal cluster access to SSH automation agents
+apiVersion: v1
+kind: Service
+metadata:
+  name: openssh-automation
+  namespace: default
+  labels:
+    app: openssh-automation
+spec:
+  type: ClusterIP
+  selector:
+    app: openssh-automation
+  ports:
+  - name: metrics
+    port: 9100
+    targetPort: 9100
+    protocol: TCP
+  # Service is primarily for identification
+  # SSH operations are typically exec'd into pods
+  sessionAffinity: ClientIP
+
+---
+# Example: Job for Running SSH Automation Task
+# Use this pattern to execute specific SSH automation tasks
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openssh-task-example
+  namespace: default
+  labels:
+    app: openssh-automation
+    task: example
+spec:
+  # Retry logic
+  backoffLimit: 3
+  
+  template:
+    metadata:
+      labels:
+        app: openssh-automation
+        task: example
+        
+    spec:
+      restartPolicy: OnFailure
+      
+      containers:
+      - name: ssh-task
+        image: alpine:3.18
+        command: ["sh", "-c"]
+        args:
+          - |
+            apk add --no-cache openssh-client
+            
+            # Set up SSH
+            mkdir -p ~/.ssh
+            cp /etc/ssh-config/ssh_config ~/.ssh/config
+            cp /etc/ssh-config/known_hosts /etc/ssh/known_hosts
+            cp /etc/ssh-keys/id_rsa ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            
+            # Example SSH automation task
+            # Replace with your actual automation commands
+            echo "Executing SSH automation task..."
+            
+            # ssh production-server "hostname && uptime"
+            # ssh staging-server "df -h"
+            
+            echo "Task completed successfully"
+            
+        volumeMounts:
+        - name: ssh-config
+          mountPath: /etc/ssh-config
+          readOnly: true
+        - name: ssh-keys
+          mountPath: /etc/ssh-keys
+          readOnly: true
+          
+      volumes:
+      - name: ssh-config
+        configMap:
+          name: openssh-config
+      - name: ssh-keys
+        secret:
+          secretName: openssh-keys
+          defaultMode: 0600
+
+---
+# Example: CronJob for Scheduled SSH Automation
+# Runs SSH automation tasks on a schedule
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openssh-scheduled-task
+  namespace: default
+  labels:
+    app: openssh-automation
+spec:
+  # Run every hour
+  schedule: "0 * * * *"
+  
+  # Keep last 3 successful and 1 failed job
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          
+          containers:
+          - name: ssh-cron-task
+            image: alpine:3.18
+            command: ["sh", "-c"]
+            args:
+              - |
+                apk add --no-cache openssh-client
+                
+                mkdir -p ~/.ssh
+                cp /etc/ssh-config/ssh_config ~/.ssh/config
+                cp /etc/ssh-keys/id_rsa ~/.ssh/id_rsa
+                chmod 600 ~/.ssh/id_rsa
+                
+                echo "Running scheduled SSH automation..."
+                # Add your scheduled SSH commands here
+                
+            volumeMounts:
+            - name: ssh-config
+              mountPath: /etc/ssh-config
+            - name: ssh-keys
+              mountPath: /etc/ssh-keys
+              
+          volumes:
+          - name: ssh-config
+            configMap:
+              name: openssh-config
+          - name: ssh-keys
+            secret:
+              secretName: openssh-keys
+              defaultMode: 0600
+
+---
+# NetworkPolicy: Restrict SSH Automation Agent Network Access (Optional)
+# Best Practice: Limit network access to only required endpoints
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openssh-automation-netpol
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: openssh-automation
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow SSH to external hosts
+  - to:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 22
+  # Allow HTTPS for package downloads
+  - ports:
+    - protocol: TCP
+      port: 443
+
+# ==============================================================================
+# USAGE INSTRUCTIONS:
+# ==============================================================================
+#
+# 1. Create the SSH private key secret:
+#    kubectl create secret generic openssh-keys \
+#      --from-file=id_rsa=/path/to/your/private/key
+#
+# 2. Update the ConfigMap with your SSH hosts in known_hosts
+#
+# 3. Apply this configuration:
+#    kubectl apply -f openssh-deployment.yaml
+#
+# 4. Verify deployment:
+#    kubectl get pods -l app=openssh-automation
+#
+# 5. Execute SSH commands in a pod:
+#    kubectl exec -it <pod-name> -- ssh user@remote-host "command"
+#
+# 6. View logs:
+#    kubectl logs -l app=openssh-automation
+#
+# 7. Scale deployment:
+#    kubectl scale deployment openssh-automation --replicas=5
+#
+# ==============================================================================
+# SECURITY BEST PRACTICES:
+# ==============================================================================
+#
+# - Use SSH keys instead of passwords
+# - Rotate SSH keys regularly
+# - Use separate keys for different environments
+# - Limit SSH access with NetworkPolicy
+# - Use RBAC to restrict access to secrets
+# - Enable audit logging for SSH operations
+# - Run containers as non-root user
+# - Use read-only file systems where possible
+# - Implement proper secret management (e.g., HashiCorp Vault)
+# - Monitor SSH session logs
+#
+# ==============================================================================
