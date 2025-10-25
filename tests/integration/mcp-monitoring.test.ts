@@ -44,7 +44,7 @@ describe('MCP Monitoring Integration', () => {
         method: 'tools/list',
         duration: 50 + Math.random() * 100,
         success: i < 9, // 1 failure
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
     }
 
