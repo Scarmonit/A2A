@@ -233,6 +233,38 @@ export class AggregationCache {
     const cached = this.cache.get(key);
     return cached !== undefined && cached.expiry > Date.now();
   }
+
+  /**
+   * Generic set method for tests and simple caching
+   */
+  set(key: string, data: any, ttl: number = 60000): void {
+    const now = Date.now();
+    this.cache.set(key, {
+      data,
+      expiry: now + ttl,
+      createdAt: now
+    });
+  }
+
+  /**
+   * Generic get method for tests and simple caching
+   */
+  get(key: string): any {
+    const cached = this.cache.get(key);
+    if (cached && cached.expiry > Date.now()) {
+      this.hitCount++;
+      return cached.data;
+    }
+    this.missCount++;
+    return undefined;
+  }
+
+  /**
+   * Alias for clearAll() for test compatibility
+   */
+  clear(): void {
+    this.clearAll();
+  }
 }
 
 // Export singleton instance

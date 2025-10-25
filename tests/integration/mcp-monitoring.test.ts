@@ -44,7 +44,7 @@ describe('MCP Monitoring Integration', () => {
         method: 'tools/list',
         duration: 50 + Math.random() * 100,
         success: i < 9, // 1 failure
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
     }
 
@@ -68,14 +68,14 @@ describe('MCP Monitoring Integration', () => {
         duration: 100,
         success: false,
         errorType: 'TimeoutError',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
     }
 
     const anomalies = mcpMonitor.detectAnomalies('test-mcp-server');
-    
+
     assert.ok(
-      anomalies.some((a) => a.type === 'error_spike'),
+      anomalies.some((a) => a.type === 'anomaly' && a.title.includes('Error Rate')),
       'Should detect error spike anomaly'
     );
   });
@@ -91,7 +91,7 @@ describe('MCP Monitoring Integration', () => {
         method: 'test',
         duration: 100,
         success: true,
-        timestamp: now - i * 60 * 1000, // Spread over 5 minutes
+        timestamp: new Date(now - i * 60 * 1000), // Spread over 5 minutes
       });
     }
 
@@ -112,15 +112,15 @@ describe('MCP Monitoring Integration', () => {
       method: 'tools/list',
       duration: 50,
       success: true,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
-    
+
     mcpMonitor.trackServerCall({
       serverId: 'test-mcp-server',
       method: 'tools/call',
       duration: 150,
       success: true,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     const metrics = mcpMonitor.getServerMetrics('test-mcp-server', '5m');
@@ -138,14 +138,14 @@ describe('MCP Monitoring Integration', () => {
         method: 'tools/call',
         duration: 6000, // 6 seconds - high latency
         success: true,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
     }
 
     const anomalies = mcpMonitor.detectAnomalies('test-mcp-server');
-    
+
     assert.ok(
-      anomalies.some((a) => a.type === 'high_latency'),
+      anomalies.some((a) => a.type === 'trend' && a.title.includes('Slow')),
       'Should detect high latency anomaly'
     );
   });

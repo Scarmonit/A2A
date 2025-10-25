@@ -95,59 +95,104 @@ export class MCPServerMonitor {
   /**
    * Detect anomalies in MCP server behavior
    */
-  detectAnomalies(): AnalyticsInsight[] {
+  detectAnomalies(serverId?: string): AnalyticsInsight[] {
     const insights: AnalyticsInsight[] = [];
-    const recentCalls = this.serverCallHistory.slice(-100);
+
+    // Filter by serverId if provided
+    let calls = serverId
+      ? this.serverCallHistory.filter(c => c.serverId === serverId)
+      : this.serverCallHistory;
+
+    const recentCalls = calls.slice(-100);
     if (recentCalls.length < 10) return insights;
-    // Check for high error rate
+
+    // Check for high error rate (error spike)
     const errorRate = recentCalls.filter(c => !c.success).length / recentCalls.length;
     if (errorRate > 0.2) {
       insights.push({
-        type: 'anomaly',
+        type: 'anomaly' as const,
         severity: 'critical',
         title: 'High MCP Server Error Rate',
         description: `Error rate is ${(errorRate * 100).toFixed(1)}% in recent calls`,
-        data: { errorRate, recentCalls: recentCalls.length }
+        data: { errorRate, recentCalls: recentCalls.length },
+        confidence: 0.95
       });
     }
-    // Check for slow responses
+
+    // Check for slow responses (high latency)
     const avgDuration = recentCalls.reduce((sum, c) => sum + c.duration, 0) / recentCalls.length;
     if (avgDuration > 5000) {
       insights.push({
-        type: 'trend',
+        type: 'trend' as const,
         severity: 'warning',
         title: 'Slow MCP Server Responses',
         description: `Average response time is ${avgDuration.toFixed(0)}ms`,
-        data: { avgDuration, threshold: 5000 }
+        data: { avgDuration, threshold: 5000 },
+        confidence: 0.9
       });
     }
+
     return insights;
   }
   /**
    * Get server performance metrics
    */
-  getServerMetrics(serverId?: string): {
+  getServerMetrics(serverId?: string, timeRange?: string): {
     totalCalls: number;
+    successfulCalls: number;
+    failedCalls: number;
     successRate: number;
     averageDuration: number;
+    avgLatency: number;
+    p95Latency: number;
     errorsByType: Map<string, number>;
   } {
-    const calls = serverId
+    // Filter by serverId if provided
+    let calls = serverId
       ? this.serverCallHistory.filter(c => c.serverId === serverId)
       : this.serverCallHistory;
+
+    // Filter by time range if provided
+    if (timeRange) {
+      const now = Date.now();
+      let cutoff = now;
+
+      // Parse time range (e.g., '1m', '5m', '1h')
+      const match = timeRange.match(/^(\d+)([smh])$/);
+      if (match) {
+        const value = parseInt(match[1]);
+        const unit = match[2];
+        const multiplier = unit === 's' ? 1000 : unit === 'm' ? 60000 : 3600000;
+        cutoff = now - value * multiplier;
+      }
+
+      calls = calls.filter(c => c.timestamp.getTime() >= cutoff);
+    }
+
     const totalCalls = calls.length;
     const successfulCalls = calls.filter(c => c.success).length;
     const successRate = totalCalls > 0 ? successfulCalls / totalCalls : 0;
     const totalDuration = calls.reduce((sum, c) => sum + c.duration, 0);
     const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
+
+    // Calculate P95 latency
+    const durations = calls.map(c => c.duration).sort((a, b) => a - b);
+    const p95Index = Math.ceil(durations.length * 0.95) - 1;
+    const p95Latency = durations.length > 0 ? durations[Math.max(0, p95Index)] : 0;
+
     const errorsByType = new Map<string, number>();
     calls.filter(c => !c.success && c.errorType).forEach(c => {
       errorsByType.set(c.errorType!, (errorsByType.get(c.errorType!) || 0) + 1);
     });
+
     return {
       totalCalls,
+      successfulCalls,
+      failedCalls: totalCalls - successfulCalls,
       successRate,
       averageDuration,
+      avgLatency: averageDuration, // Alias for compatibility
+      p95Latency,
       errorsByType
     };
   }
@@ -168,12 +213,50 @@ export class MCPServerMonitor {
   /**
    * Clear old history (for memory management)
    */
-  clearHistory(olderThan: Date): void {
+  clearHistory(olderThan?: Date): void {
+    if (!olderThan) {
+      this.clear();
+      return;
+    }
+
     const timestamp = olderThan.getTime();
     this.serverCallHistory = this.serverCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.toolCallHistory = this.toolCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.resourceAccessHistory = this.resourceAccessHistory.filter(r => r.timestamp.getTime() > timestamp);
     logger.info({ olderThan }, 'Cleared old monitoring history');
+  }
+
+  /**
+   * Clear all monitoring data
+   */
+  clear(): void {
+    this.serverCallHistory = [];
+    this.toolCallHistory = [];
+    this.resourceAccessHistory = [];
+    logger.info('Cleared all monitoring history');
+  }
+
+  /**
+   * Get all metrics grouped by server ID
+   */
+  getMetrics(): Record<string, {
+    totalCalls: number;
+    successfulCalls: number;
+    failedCalls: number;
+    successRate: number;
+    averageDuration: number;
+    avgLatency: number;
+    p95Latency: number;
+    errorsByType: Map<string, number>;
+  }> {
+    const servers = new Set(this.serverCallHistory.map(c => c.serverId));
+    const metrics: Record<string, any> = {};
+
+    servers.forEach(serverId => {
+      metrics[serverId] = this.getServerMetrics(serverId);
+    });
+
+    return metrics;
   }
 }
 // Export singleton instance
