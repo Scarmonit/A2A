@@ -1,0 +1,199 @@
+# Trunk Configuration for A2A Project
+# Optimized for TypeScript/JavaScript/Node.js with Railway/Vercel/Cloudflare deployment
+
+version: 0.1
+cli:
+  version: 1.22.2
+
+# Plugin configuration
+plugins:
+  sources:
+    - id: trunk
+      ref: v1.6.0
+      uri: https://github.com/trunk-io/plugins
+
+# Runtimes for linters
+runtimes:
+  enabled:
+    - node@18.12.1
+    - python@3.10.8
+
+# Linters configuration
+lint:
+  # Hold-the-line mode: only lint files changed in git diff
+  threshold:
+    - linters: [ALL]
+      level: high
+  
+  # Ignore patterns
+  ignore:
+    - linters: [ALL]
+      paths:
+        - node_modules/**
+        - dist/**
+        - build/**
+        - .next/**
+        - .vercel/**
+        - coverage/**
+        - '**/*.min.js'
+        - '**/*.bundle.js'
+        - .trunk/**
+        - https:/github.com/Scarmonit/A2A.git/**
+
+  # Enabled linters
+  enabled:
+    # JavaScript/TypeScript linters
+    - eslint@9.14.0:
+        commands:
+          - name: lint
+            run: eslint --cache --cache-location .trunk/out/eslint-cache ${target}
+        environment:
+          - name: NODE_ENV
+            value: production
+    
+    - prettier@3.3.3:
+        commands:
+          - name: format
+            run: prettier --cache --cache-location .trunk/out/prettier-cache --write ${target}
+    
+    - typescript@5.6.3:
+        commands:
+          - name: check
+            run: tsc --noEmit
+    
+    # YAML/Config linters
+    - yamllint@1.35.1:
+        commands:
+          - name: lint
+            run: yamllint -f parsable ${target}
+    
+    # Markdown linter
+    - markdownlint@0.42.0:
+        commands:
+          - name: lint
+            run: markdownlint --config .markdownlint.json ${target}
+    
+    # GitHub Actions linter
+    - actionlint@1.7.4:
+        commands:
+          - name: lint
+            run: actionlint ${target}
+    
+    # Docker linter
+    - hadolint@2.12.0:
+        commands:
+          - name: lint
+            run: hadolint ${target}
+    
+    # Shell script linter
+    - shellcheck@0.10.0:
+        commands:
+          - name: lint
+            run: shellcheck --format=json ${target}
+    
+    # Security linters
+    - trivy@0.57.1:
+        commands:
+          - name: scan-config
+            run: trivy config ${target}
+          - name: scan-fs
+            run: trivy fs --security-checks vuln,secret,config ${target}
+    
+    - checkov@3.2.259:
+        commands:
+          - name: scan
+            run: checkov --framework dockerfile,kubernetes,terraform --file ${target}
+    
+    # JSON linter
+    - json-schema-validator@0.1.0:
+        commands:
+          - name: validate
+            run: ajv validate --all-errors ${target}
+    
+    # Git linters
+    - git-diff-check@SYSTEM:
+        commands:
+          - name: check
+            run: git diff --check
+    
+    - gitleaks@8.20.1:
+        commands:
+          - name: detect
+            run: gitleaks detect --source ${target} --no-git
+    
+    # Additional formatters
+    - taplo@0.9.3:
+        commands:
+          - name: format
+            run: taplo format ${target}
+
+# Actions configuration
+actions:
+  enabled:
+    - trunk-announce
+    - trunk-check-pre-push
+    - trunk-fmt-pre-commit
+    - trunk-upgrade-available
+
+# Merge queue configuration
+merge:
+  required_statuses:
+    - trunk-check
+    - build
+    - test
+  
+# CI Integration
+ci:
+  notifications:
+    - trunk_action: trunk-check
+      github_status:
+        context: trunk-check
+        description: Trunk Check
+    - trunk_action: trunk-fmt
+      github_status:
+        context: trunk-format
+        description: Trunk Format
+
+# Deployment-specific settings
+deploy:
+  # Railway configuration
+  railway:
+    healthcheck:
+      enabled: true
+      path: /health
+      interval: 30
+  
+  # Vercel configuration  
+  vercel:
+    framework: nextjs
+    build:
+      env:
+        - NODE_ENV=production
+  
+  # Cloudflare configuration
+  cloudflare:
+    compatibility_date: 2024-01-01
+    workers:
+      enabled: true
+
+# Tools configuration
+tools:
+  enabled:
+    - gh@2.58.0
+    - node@18.12.1
+    - npm@9.8.1
+  
+  definitions:
+    - name: custom-deploy
+      runtime: node
+      package: deploy-script
+      shims: [deploy]
+
+# API configuration for trunk.io
+api:
+  address: api.trunk.io:443
+
+# Hold-the-line configuration (only check changed files)
+hold_the_line:
+  enabled: true
+  threshold: medium
