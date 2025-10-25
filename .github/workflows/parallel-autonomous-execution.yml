@@ -1,0 +1,234 @@
+name: Parallel Autonomous Execution
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+concurrency:
+  group: parallel-autonomous-execution-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web_scraping:
+    name: Web Scraping (parallel browsers)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        browser: [chromium, firefox, webkit]
+        target: ["https://example.com", "https://httpbin.org/html", "https://news.ycombinator.com"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: |
+          npm --prefix .github/scripts ci || true
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run parallel scraping
+        id: scrape
+        env:
+          BROWSER: ${{ matrix.browser }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          node -e '
+          const { chromium, firefox, webkit } = require("playwright");
+          const map = {chromium, firefox, webkit};
+          (async () => {
+            const b = await map[process.env.BROWSER].launch();
+            const ctx = await b.newContext();
+            const p = await ctx.newPage();
+            await p.goto(process.env.TARGET, { waitUntil: "domcontentloaded", timeout: 60000 });
+            const title = await p.title();
+            console.log(`TITLE=${title}`);
+            const h1 = await p.locator("h1").first().textContent().catch(()=>"");
+            console.log(`H1=${h1}`);
+            await b.close();
+          })().catch(e=>{ console.error(e); process.exitCode=1; });
+          '
+      - name: Upload scrape logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-${{ matrix.browser }}-${{ strategy.job-index }}
+          path: |
+            **/playwright.log
+          if-no-files-found: ignore
+
+  api_processing:
+    name: API Processing (parallel requests)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        endpoint: [
+          "https://httpbin.org/get?i=1",
+          "https://httpbin.org/get?i=2",
+          "https://httpbin.org/get?i=3",
+          "https://api.github.com/rate_limit"
+        ]
+    steps:
+      - name: Parallel curl request
+        id: curl
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='${{ matrix.endpoint }}'
+          echo "Fetching $url"
+          http_code=$(curl -sS -w "%{http_code}" -o resp.json "$url" || echo 000)
+          echo "status=$http_code" >> $GITHUB_OUTPUT
+          jq -r . resp.json | head -n 100 || cat resp.json || true
+          if [[ "$http_code" != 2* && "$http_code" != 3* ]]; then
+            echo "Non-2xx: $http_code" >&2
+            exit 1
+          fi
+      - name: Upload response
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-${{ strategy.job-index }}
+          path: resp.json
+
+  config_updates:
+    name: Configuration Updates (fan-out)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        config: [app.yaml, db.yaml, cache.yaml]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply config mutation
+        run: |
+          set -euo pipefail
+          echo "mutation: ${{ matrix.config }}" | tee -a .github/parallel-log.txt
+          mkdir -p out
+          echo "key: value-${{ strategy.job-index }}" > out/${{ matrix.config }}
+      - name: Upload config artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfg-${{ matrix.config }}
+          path: out/${{ matrix.config }}
+
+  tests:
+    name: Tests (multi-env matrix)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install and test in parallel
+        run: |
+          npm ci || true
+          npx -y concurrently -k -s all "echo unit && sleep 2" "echo integration && sleep 2" "echo e2e && sleep 2"
+
+  database_ops:
+    name: Database Operations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run migrations and parallel queries
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          until pg_isready -h localhost -U postgres; do sleep 1; done
+          psql -h localhost -U postgres -c "CREATE TABLE IF NOT EXISTS items(id serial primary key, name text);"
+          printf "INSERT INTO items(name) VALUES('a');\nINSERT INTO items(name) VALUES('b');\n" | psql -h localhost -U postgres -v ON_ERROR_STOP=1
+          ( for i in {1..5}; do psql -h localhost -U postgres -c "SELECT $i, count(*) FROM items;" & done; wait )
+
+  file_processing:
+    name: File Processing (sharded)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [1,2,3,4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate files
+        run: |
+          mkdir -p data
+          for i in {1..100}; do echo "line $i" > data/file_$i.txt; done
+      - name: Process shard in parallel
+        run: |
+          set -euo pipefail
+          shard=${{ matrix.shard }}
+          mod=$(( shard - 1 ))
+          ( ls data/*.txt | awk -v m=$mod 'NR%4==m' | xargs -P 8 -I{} bash -c 'wc -l {} >> result_${{ matrix.shard }}.txt' )
+      - name: Upload shard results
+        uses: actions/upload-artifact@v4
+        with:
+          name: files-${{ matrix.shard }}
+          path: result_${{ matrix.shard }}.txt
+
+  infra_updates:
+    name: Infrastructure Updates (plan/apply)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        action: [plan, apply]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simulate ${{ matrix.action }}
+        run: |
+          set -euo pipefail
+          echo "infra ${{ matrix.action }} starting"
+          sleep 2
+          echo "infra ${{ matrix.action }} done" | tee infra_${{ matrix.action }}.log
+      - name: Upload infra logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-${{ matrix.action }}
+          path: infra_${{ matrix.action }}.log
+
+  aggregate:
+    name: Aggregate Results
+    runs-on: ubuntu-latest
+    needs: [web_scraping, api_processing, config_updates, tests, database_ops, file_processing, infra_updates]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Summarize
+        id: summary
+        run: |
+          set -euo pipefail
+          echo "Artifacts present:" > summary.txt
+          find artifacts -type f | sed 's/^/- /' >> summary.txt
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          cat summary.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Post Job Summary
+        run: |
+          echo "# Parallel Autonomous Execution Summary" >> $GITHUB_STEP_SUMMARY
+          cat summary.txt >> $GITHUB_STEP_SUMMARY
