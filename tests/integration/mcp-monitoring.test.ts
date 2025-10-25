@@ -3,7 +3,6 @@
  * 
  * Tests MCP server monitoring, call tracking, and anomaly detection
  */
-
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { TestEnvironment } from './setup.js';
@@ -36,7 +35,7 @@ describe('MCP Monitoring Integration', () => {
 
   it('should track all MCP server calls', async () => {
     // Clear any existing data
-    mcpMonitor.clear('test-mcp-server');
+    mcpMonitor.clearCache('test-mcp-server');
 
     // Simulate 10 MCP calls
     for (let i = 0; i < 10; i++) {
@@ -58,7 +57,7 @@ describe('MCP Monitoring Integration', () => {
 
   it('should detect anomalous patterns', async () => {
     // Clear previous data
-    mcpMonitor.clear('test-mcp-server');
+    mcpMonitor.clearCache('test-mcp-server');
 
     // Simulate error spike
     for (let i = 0; i < 20; i++) {
@@ -72,18 +71,17 @@ describe('MCP Monitoring Integration', () => {
     }
 
     const anomalies = mcpMonitor.detectAnomalies('test-mcp-server');
-
-    assert.ok(anomalies.length > 0, 'Should detect anomalies');
+    
     assert.ok(
-      anomalies.some((a) => a.type === 'high_error_rate'),
-      'Should detect high error rate'
+      anomalies.some((a) => a.type === 'error_spike'),
+      'Should detect error spike anomaly'
     );
   });
 
-  it('should calculate metrics for different time windows', async () => {
-    mcpMonitor.clear('test-mcp-server');
+  it('should track metrics over different time windows', async () => {
+    mcpMonitor.clearCache('test-mcp-server');
 
-    // Add calls at different times
+    // Track calls spread over time
     const now = Date.now();
     for (let i = 0; i < 5; i++) {
       mcpMonitor.trackServerCall({
@@ -104,7 +102,7 @@ describe('MCP Monitoring Integration', () => {
   });
 
   it('should track different methods separately', async () => {
-    mcpMonitor.clear('test-mcp-server');
+    mcpMonitor.clearCache('test-mcp-server');
 
     // Track different methods
     mcpMonitor.trackServerCall({
@@ -127,7 +125,7 @@ describe('MCP Monitoring Integration', () => {
   });
 
   it('should detect high latency anomalies', async () => {
-    mcpMonitor.clear('test-mcp-server');
+    mcpMonitor.clearCache('test-mcp-server');
 
     // Simulate high latency calls
     for (let i = 0; i < 15; i++) {
