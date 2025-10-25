@@ -3,8 +3,7 @@
  * MCP Server Monitoring and Observability
  * Tracks MCP server calls, detects anomalies, and provides security monitoring
  */
-
-import { analyticsEngine, AnalyticsInsight } from './analytics-engine.js';
+import { AnalyticsEngine, AnalyticsInsight } from './analytics-engine.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'mcp-monitor' });
@@ -55,7 +54,7 @@ export class MCPServerMonitor {
     }
 
     // Track in analytics engine
-    analyticsEngine.track({
+    AnalyticsEngine.getInstance().track({
       eventType: 'mcp_server_call',
       data: params,
       tags: {
@@ -69,99 +68,80 @@ export class MCPServerMonitor {
   }
 
   /**
-   * Track tool call with token usage
+   * Track tool call metrics
    */
-  trackToolCall(params: ToolCallMetrics): void {
-    this.toolCallHistory.push(params);
+  trackToolCall(metrics: ToolCallMetrics): void {
+    this.toolCallHistory.push(metrics);
 
     if (this.toolCallHistory.length > this.MAX_HISTORY) {
       this.toolCallHistory = this.toolCallHistory.slice(-this.MAX_HISTORY);
     }
 
-    analyticsEngine.track({
+    // Track in analytics engine
+    AnalyticsEngine.getInstance().track({
       eventType: 'tool_call',
-      agentId: params.agentId,
-      data: params,
+      data: metrics,
       tags: {
-        tool: params.toolName,
-        status: params.success ? 'success' : 'error'
+        tool: metrics.toolName,
+        agent: metrics.agentId,
+        status: metrics.success ? 'success' : 'error'
       }
     });
-
-    logger.info({ params }, 'Tool call tracked');
   }
 
   /**
-   * Track resource access (memory, CPU, network, MCP servers)
+   * Track resource access patterns
    */
-  trackResourceAccess(params: ResourceAccess): void {
-    this.resourceAccessHistory.push(params);
+  trackResourceAccess(access: ResourceAccess): void {
+    this.resourceAccessHistory.push(access);
 
     if (this.resourceAccessHistory.length > this.MAX_HISTORY) {
       this.resourceAccessHistory = this.resourceAccessHistory.slice(-this.MAX_HISTORY);
     }
 
-    analyticsEngine.track({
+    // Track in analytics engine
+    AnalyticsEngine.getInstance().track({
       eventType: 'resource_access',
-      agentId: params.agentId,
-      data: params
+      data: access,
+      tags: {
+        resource: access.resourceType,
+        agent: access.agentId
+      }
     });
-
-    logger.debug({ params }, 'Resource access tracked');
   }
 
   /**
-   * Detect anomalous tool calls (high frequency, privilege escalation, etc.)
+   * Detect anomalies in recent MCP server calls
    */
-  detectAnomalousToolCalls(): AnalyticsInsight[] {
-    const insights: AnalyticsInsight[] = [];
+  detectAnomalies(timeWindowMs: number = 60000): AnalyticsInsight[] {
     const now = Date.now();
-    const last5Minutes = this.toolCallHistory.filter(
-      call => now - call.timestamp.getTime() < 5 * 60 * 1000
+    const recentCalls = this.serverCallHistory.filter(
+      c => now - c.timestamp.getTime() < timeWindowMs
     );
 
-    // Check for high-frequency calls
-    const callsByAgent = new Map<string, number>();
-    last5Minutes.forEach(call => {
-      callsByAgent.set(call.agentId, (callsByAgent.get(call.agentId) || 0) + 1);
-    });
+    const insights: AnalyticsInsight[] = [];
 
-    callsByAgent.forEach((count, agentId) => {
-      if (count > 100) {
-        insights.push({
-          type: 'anomaly',
-          severity: 'warning',
-          title: 'High Frequency Tool Calls',
-          description: `Agent ${agentId} made ${count} tool calls in 5 minutes`,
-          data: {
-            agentId,
-            count,
-            timeWindow: '5m'
-          },
-          confidence: 0.85,
-          recommendations: ['Review agent behavior for potential issues']
-        });
-      }
-    });
-
-    // Check for unusual error rates
-    const totalCalls = last5Minutes.length;
-    const failedCalls = last5Minutes.filter(c => !c.success).length;
-    const errorRate = totalCalls > 0 ? failedCalls / totalCalls : 0;
-
-    if (errorRate > 0.2 && totalCalls > 10) {
+    // Check for high error rate
+    const errorRate = recentCalls.filter(c => !c.success).length / recentCalls.length;
+    if (errorRate > 0.3 && recentCalls.length > 10) {
       insights.push({
-        type: 'anomaly',
-        severity: 'critical',
-        title: 'High Tool Call Error Rate',
-        description: `${(errorRate * 100).toFixed(1)}% of tool calls failing`,
-        data: {
-          errorRate,
-          totalCalls,
-          failedCalls
-        },
-        confidence: 0.92,
-        recommendations: ['Investigate tool integrations and error logs']
+        insight: `High error rate detected: ${(errorRate * 100).toFixed(1)}%`,
+        severity: 'high',
+        category: 'performance',
+        suggestedAction: 'Investigate MCP server errors',
+        timestamp: new Date()
+      });
+    }
+
+    // Check for slow response times
+    const avgDuration = recentCalls.reduce((sum, c) => sum + c.duration, 0) / recentCalls.length;
+    if (avgDuration > 5000 && recentCalls.length > 10) {
+      insights.push({
+        insight: `Slow MCP server response: ${avgDuration.toFixed(0)}ms average`,
+        severity: 'medium',
+        category: 'performance',
+        suggestedAction: 'Review server performance and consider optimization',
+        timestamp: new Date()
       });
     }
 
@@ -212,7 +192,6 @@ export class MCPServerMonitor {
       const total = resources.reduce((sum, r) => sum + r.usage, 0);
       const average = resources.length > 0 ? total / resources.length : 0;
       const peak = resources.length > 0 ? Math.max(...resources.map(r => r.usage)) : 0;
-
       summary.set(type, { total, average, peak });
     });
 
@@ -227,7 +206,6 @@ export class MCPServerMonitor {
     this.serverCallHistory = this.serverCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.toolCallHistory = this.toolCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.resourceAccessHistory = this.resourceAccessHistory.filter(r => r.timestamp.getTime() > timestamp);
-
     logger.info({ olderThan }, 'Cleared old monitoring history');
   }
 }
