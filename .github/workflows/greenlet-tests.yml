@@ -1,10 +1,10 @@
 name: Greenlet A2A Integration Tests
-
 on:
   push:
     branches: [main, copilot/integrate-greenlet-a2a-enhancements]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +16,8 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
+      max-parallel: 4
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
     
@@ -26,6 +28,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
           
       - name: Install Python dependencies
         run: |
@@ -35,6 +38,16 @@ jobs:
       - name: Run Python tests
         run: |
           python -m pytest tests/python/test_greenlet_agent.py -v --tb=short
+      
+      - name: Upload Python test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-results-${{ matrix.python-version }}
+          path: |
+            pytest-results/
+            *.log
+          retention-days: 7
 
   test-nodejs:
     name: Node.js Tests
@@ -42,6 +55,8 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
+      max-parallel: 3
       matrix:
         node-version: ['18.x', '20.x', '22.x']
     
@@ -63,6 +78,16 @@ jobs:
       - name: Run Node.js tests
         run: |
           node --test tests/greenlet-integration.test.ts
+      
+      - name: Upload Node.js test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodejs-test-results-${{ matrix.node-version }}
+          path: |
+            test-results/
+            *.log
+          retention-days: 7
 
   test-integration:
     name: Integration Tests (Python + Node.js)
@@ -70,6 +95,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.11']
         node-version: ['20.x']
@@ -81,6 +107,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
           
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -101,3 +128,14 @@ jobs:
         run: |
           node --test tests/greenlet-integration.test.ts
           python -m pytest tests/python/test_greenlet_agent.py -v
+      
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            test-results/
+            pytest-results/
+            *.log
+          retention-days: 7
