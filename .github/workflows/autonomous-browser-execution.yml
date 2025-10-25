@@ -1,0 +1,95 @@
+name: Autonomous Browser Execution
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to execute'
+        required: true
+        type: string
+      parallel:
+        description: 'Enable parallel execution'
+        required: false
+        default: 'true'
+        type: boolean
+  repository_dispatch:
+    types: [autonomous-browser-task]
+
+jobs:
+  execute-autonomous-task:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chromium, firefox, webkit]
+        node-version: [18.x, 20.x]
+      fail-fast: false
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: |
+          npm ci
+          npx playwright install ${{ matrix.browser }}
+          
+      - name: Build project
+        run: npm run build
+        
+      - name: Execute autonomous browser task
+        env:
+          BROWSER_TYPE: ${{ matrix.browser }}
+          NODE_VERSION: ${{ matrix.node-version }}
+          TASK_INPUT: ${{ github.event.inputs.task || github.event.client_payload.task }}
+          PARALLEL_ENABLED: ${{ github.event.inputs.parallel || 'true' }}
+          HEADLESS: true
+        run: |
+          node dist/browser-automation-engine.js
+          
+      - name: Upload execution results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-results-${{ matrix.browser }}-node${{ matrix.node-version }}
+          path: |
+            logs/
+            screenshots/
+            traces/
+          retention-days: 7
+          
+      - name: Upload execution logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs-${{ matrix.browser }}-node${{ matrix.node-version }}
+          path: logs/error-*.log
+          retention-days: 14
+
+  aggregate-results:
+    needs: execute-autonomous-task
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+          
+      - name: Aggregate execution results
+        run: |
+          echo "Aggregating results from all parallel executions"
+          find all-results -type f -name "*.log" | xargs cat > combined-results.log
+          
+      - name: Upload combined results
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-execution-results
+          path: combined-results.log
+          retention-days: 30
