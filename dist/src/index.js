@@ -12,6 +12,20 @@ import { StreamHub } from './streaming.js';
 import pino from 'pino';
 import * as http from 'http';
 import client, { Counter, Gauge } from 'prom-client';
+// Zero-Click Automation System
+import { initializeZeroClick } from './zero-click-integration.js';
+// Claude Memory Tool integration
+import { createClaudeMemoryTool } from './enhanced-memory-integration.js';
+// Optional: Database persistence (requires PostgreSQL)
+// Uncomment these lines and set USE_PERSISTED_REGISTRY=true in .env to enable
+// import { persistedAgentRegistry } from './db/persisted-agent-registry.js';
+// import { testDatabaseConnection, getDatabaseStats } from './db/prisma-client.js';
+// Optional: Autonomous agent deployment with LangChain (requires Ollama)
+// Uncomment these lines to enable autonomous task understanding and agent deployment
+// import { createAutonomousOrchestrator } from './langchain-integration/autonomous-orchestrator.js';
+// import { taskUnderstandingService } from './langchain-integration/task-understanding.js';
+// Export both registries for flexibility
+export { agentRegistry } from './agents.js';
 const requests = new Map();
 const idempotency = new Map(); // idempotencyKey -> entry
 const ENABLE_STREAMING = process.env.ENABLE_STREAMING !== 'false';
@@ -165,6 +179,8 @@ async function invokeAgentInternal({ agentId, capability, input, idempotencyKey,
     const streamUrl = streamHub ? streamHub.channelUrl(requestId, STREAM_TOKEN) : 'streaming disabled';
     return ok({ requestId, status: rec.status, streamUrl });
 }
+// Initialize Claude Memory Tool
+const memoryTool = createClaudeMemoryTool(process.cwd(), { preserveContext: true });
 const server = new Server({
     name: 'a2a-mcp-server',
     version: '0.1.0',
@@ -624,6 +640,62 @@ const server = new Server({
                 }
             },
         },
+        claude_memory: {
+            description: 'Claude Memory Tool for persistent agent memory with support for view, create, str_replace, insert, delete, and rename operations',
+            inputSchema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                    command: {
+                        type: 'string',
+                        enum: ['view', 'create', 'str_replace', 'insert', 'delete', 'rename']
+                    },
+                    path: { type: 'string' },
+                    newPath: { type: 'string' },
+                    content: { type: 'string' },
+                    replace: {
+                        type: 'object',
+                        properties: {
+                            search: { type: 'string' },
+                            replace: { type: 'string' },
+                            flags: { type: 'string' }
+                        }
+                    },
+                    insert: {
+                        type: 'object',
+                        properties: {
+                            position: {
+                                oneOf: [
+                                    { type: 'string', enum: ['start', 'end'] },
+                                    { type: 'number' }
+                                ]
+                            },
+                            text: { type: 'string' }
+                        }
+                    },
+                    context: {
+                        type: 'object',
+                        properties: {
+                            before: { type: 'string' },
+                            after: { type: 'string' },
+                            selection: { type: 'string' }
+                        }
+                    },
+                    meta: { type: 'object' }
+                },
+                required: ['command']
+            },
+            outputSchema: { type: 'object' },
+            async handler(params) {
+                try {
+                    const result = await memoryTool.handle(params);
+                    return result;
+                }
+                catch (err) {
+                    return { ok: false, error: err?.message || 'Memory tool error' };
+                }
+            }
+        },
     },
 });
 // Helper function to get permissions for an agent
@@ -742,6 +814,8 @@ async function runAgentJob(requestId, input) {
     }
     r.updatedAt = Date.now();
 }
+// Initialize Zero-Click Automation System
+initializeZeroClick();
 // metrics/health server
 if (METRICS_PORT > 0) {
     const srv = http.createServer(async (req, res) => {
