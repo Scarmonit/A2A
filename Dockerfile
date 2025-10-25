@@ -2,6 +2,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Update npm to the latest major version (11.6.2)
+RUN npm install -g npm@11.6.2
+
 # Copy package files
 COPY package*.json ./
 COPY tsconfig.json ./
@@ -19,6 +22,9 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine AS production
 WORKDIR /app
+
+# Update npm to the latest major version (11.6.2)
+RUN npm install -g npm@11.6.2
 
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init

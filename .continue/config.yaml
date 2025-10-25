@@ -1,0 +1,429 @@
+# Continue.dev Complete Configuration
+# Full autonomous execution with all providers and context awareness
+
+models:
+  # Anthropic Claude Models
+  - provider: anthropic
+    model: claude-3-5-sonnet-20241022
+    title: Claude 3.5 Sonnet
+    apiKey: ${ANTHROPIC_API_KEY}
+    contextLength: 200000
+    maxTokens: 8192
+    systemMessage: |
+      You are an expert AI assistant with full context awareness.
+      You have access to codebase, terminal, git, and file system.
+      Execute tasks autonomously with parallel processing when possible.
+  
+  - provider: anthropic
+    model: claude-3-opus-20240229
+    title: Claude 3 Opus
+    apiKey: ${ANTHROPIC_API_KEY}
+    contextLength: 200000
+    maxTokens: 4096
+  
+  - provider: anthropic
+    model: claude-3-haiku-20240307
+    title: Claude 3 Haiku
+    apiKey: ${ANTHROPIC_API_KEY}
+    contextLength: 200000
+    maxTokens: 4096
+
+  # OpenAI Models
+  - provider: openai
+    model: gpt-4-turbo-preview
+    title: GPT-4 Turbo
+    apiKey: ${OPENAI_API_KEY}
+    contextLength: 128000
+    maxTokens: 4096
+  
+  - provider: openai
+    model: gpt-4
+    title: GPT-4
+    apiKey: ${OPENAI_API_KEY}
+    contextLength: 8192
+    maxTokens: 4096
+  
+  - provider: openai
+    model: gpt-3.5-turbo
+    title: GPT-3.5 Turbo
+    apiKey: ${OPENAI_API_KEY}
+    contextLength: 16385
+    maxTokens: 4096
+
+  # Google Gemini Models
+  - provider: gemini
+    model: gemini-1.5-pro-latest
+    title: Gemini 1.5 Pro
+    apiKey: ${GOOGLE_API_KEY}
+    contextLength: 1000000
+    maxTokens: 8192
+  
+  - provider: gemini
+    model: gemini-1.5-flash-latest
+    title: Gemini 1.5 Flash
+    apiKey: ${GOOGLE_API_KEY}
+    contextLength: 1000000
+    maxTokens: 8192
+
+  # DeepSeek Models
+  - provider: deepseek
+    model: deepseek-chat
+    title: DeepSeek Chat
+    apiKey: ${DEEPSEEK_API_KEY}
+    apiBase: https://api.deepseek.com
+    contextLength: 32768
+    maxTokens: 4096
+  
+  - provider: deepseek
+    model: deepseek-coder
+    title: DeepSeek Coder
+    apiKey: ${DEEPSEEK_API_KEY}
+    apiBase: https://api.deepseek.com
+    contextLength: 32768
+    maxTokens: 4096
+
+  # Mistral Models
+  - provider: mistral
+    model: mistral-large-latest
+    title: Mistral Large
+    apiKey: ${MISTRAL_API_KEY}
+    contextLength: 32000
+    maxTokens: 4096
+  
+  - provider: mistral
+    model: mistral-medium-latest
+    title: Mistral Medium
+    apiKey: ${MISTRAL_API_KEY}
+    contextLength: 32000
+    maxTokens: 4096
+  
+  - provider: mistral
+    model: codestral-latest
+    title: Codestral
+    apiKey: ${MISTRAL_API_KEY}
+    contextLength: 32000
+    maxTokens: 4096
+
+  # Ollama Local Models
+  - provider: ollama
+    model: codellama:13b
+    title: CodeLlama 13B
+    apiBase: http://localhost:11434
+    contextLength: 16384
+    maxTokens: 2048
+  
+  - provider: ollama
+    model: mistral:7b
+    title: Mistral 7B
+    apiBase: http://localhost:11434
+    contextLength: 8192
+    maxTokens: 2048
+  
+  - provider: ollama
+    model: deepseek-coder:6.7b
+    title: DeepSeek Coder 6.7B
+    apiBase: http://localhost:11434
+    contextLength: 16384
+    maxTokens: 2048
+
+# Tab Autocomplete Configuration
+tabAutocompleteModel:
+  provider: anthropic
+  model: claude-3-5-sonnet-20241022
+  title: Claude 3.5 Sonnet Autocomplete
+  apiKey: ${ANTHROPIC_API_KEY}
+  maxTokens: 500
+
+# Embeddings Configuration for Context Retrieval
+embeddingsProvider:
+  provider: openai
+  model: text-embedding-3-small
+  apiKey: ${OPENAI_API_KEY}
+  dimensions: 1536
+
+# Reranking Configuration
+rerankProvider:
+  provider: cohere
+  model: rerank-english-v3.0
+  apiKey: ${COHERE_API_KEY}
+
+# Context Providers - All Available
+contextProviders:
+  # File Context - Select files from workspace
+  - name: file
+    params:
+      maxFiles: 20
+      ignorePatterns:
+        - "**/node_modules/**"
+        - "**/.git/**"
+        - "**/dist/**"
+        - "**/build/**"
+        - "**/__pycache__/**"
+        - "**/.venv/**"
+        - "**/venv/**"
+
+  # Code Context - Search and reference code symbols
+  - name: code
+    params:
+      maxResults: 30
+      includeDefinitions: true
+      includeReferences: true
+
+  # Terminal Context - Reference terminal output
+  - name: terminal
+    params:
+      maxLines: 500
+      includeStderr: true
+      includeStdout: true
+
+  # Git Diff Context - Current changes
+  - name: diff
+    params:
+      includeStaged: true
+      includeUnstaged: true
+      maxFiles: 50
+
+  # Repository Map Context - High-level codebase structure
+  - name: repo-map
+    params:
+      maxTokens: 4000
+      includeSignatures: true
+      includeDocs: true
+
+  # Open Files Context - Currently open editor tabs
+  - name: open
+    params:
+      maxFiles: 10
+
+  # Codebase Context - Full repository search
+  - name: codebase
+    params:
+      nRetrieve: 25
+      nFinal: 10
+      useReranking: true
+
+  # Folder Context - Include entire directories
+  - name: folder
+    params:
+      maxFiles: 100
+      recursive: true
+
+  # URL Context - Fetch and include web content
+  - name: url
+    params:
+      timeout: 10000
+      maxLength: 10000
+
+  # Documentation Context - Search documentation
+  - name: docs
+    params:
+      sites:
+        - name: Python
+          url: https://docs.python.org/3/
+        - name: JavaScript MDN
+          url: https://developer.mozilla.org/en-US/docs/Web/JavaScript
+        - name: React
+          url: https://react.dev/
+        - name: TypeScript
+          url: https://www.typescriptlang.org/docs/
+
+  # GitHub Issues Context
+  - name: github
+    params:
+      repos:
+        - Scarmonit/A2A
+      includeIssues: true
+      includePRs: true
+
+  # Google Search Context
+  - name: google
+    params:
+      apiKey: ${GOOGLE_SEARCH_API_KEY}
+      searchEngineId: ${GOOGLE_SEARCH_ENGINE_ID}
+      maxResults: 5
+
+# MCP (Model Context Protocol) Servers
+mcpServers:
+  # Filesystem MCP Server
+  - name: filesystem
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "${workspaceFolder}"
+    env:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+
+  # Git MCP Server
+  - name: git
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-git"
+      - "${workspaceFolder}"
+
+  # GitHub MCP Server
+  - name: github
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-github"
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+
+  # PostgreSQL MCP Server
+  - name: postgres
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-postgres"
+    env:
+      POSTGRES_CONNECTION_STRING: ${POSTGRES_CONNECTION_STRING}
+
+  # Brave Search MCP Server
+  - name: brave-search
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-brave-search"
+    env:
+      BRAVE_API_KEY: ${BRAVE_API_KEY}
+
+  # Puppeteer MCP Server for Browser Automation
+  - name: puppeteer
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-puppeteer"
+
+# Slash Commands Configuration
+slashCommands:
+  - name: edit
+    description: Edit code with AI assistance
+  - name: comment
+    description: Add comments to code
+  - name: share
+    description: Share conversation or code
+  - name: cmd
+    description: Generate shell commands
+  - name: commit
+    description: Generate git commit messages
+
+# Custom Commands
+customCommands:
+  - name: test
+    description: Generate tests for selected code
+    prompt: |
+      Generate comprehensive unit tests for the following code.
+      Include edge cases, error handling, and documentation.
+      Use the appropriate testing framework for the language.
+      
+      {{{ input }}}
+
+  - name: docs
+    description: Generate documentation
+    prompt: |
+      Generate detailed documentation for the following code.
+      Include:
+      - Function/class descriptions
+      - Parameter documentation
+      - Return value documentation
+      - Usage examples
+      - Notes about edge cases
+      
+      {{{ input }}}
+
+  - name: refactor
+    description: Refactor and optimize code
+    prompt: |
+      Refactor the following code to improve:
+      - Readability
+      - Performance
+      - Maintainability
+      - Best practices adherence
+      Explain your changes.
+      
+      {{{ input }}}
+
+  - name: review
+    description: Code review and suggestions
+    prompt: |
+      Perform a thorough code review of the following code.
+      Check for:
+      - Bugs and potential issues
+      - Security vulnerabilities
+      - Performance problems
+      - Code style and best practices
+      - Suggestions for improvement
+      
+      {{{ input }}}
+
+  - name: explain
+    description: Explain code in detail
+    prompt: |
+      Explain the following code in detail:
+      - What it does
+      - How it works
+      - Key algorithms or patterns used
+      - Dependencies and requirements
+      - Potential gotchas or edge cases
+      
+      {{{ input }}}
+
+  - name: parallel
+    description: Implement with parallel processing
+    prompt: |
+      Implement the following with parallel processing capabilities:
+      - Identify parallelizable operations
+      - Use appropriate concurrency primitives
+      - Handle synchronization and race conditions
+      - Optimize for multi-core execution
+      - Include error handling for parallel operations
+      
+      {{{ input }}}
+
+# Experimental Features
+experimental:
+  modelRoles:
+    # Fast model for quick tasks
+    quick:
+      provider: anthropic
+      model: claude-3-haiku-20240307
+    
+    # Powerful model for complex tasks
+    powerful:
+      provider: anthropic
+      model: claude-3-opus-20240229
+    
+    # Specialized model for code generation
+    coder:
+      provider: deepseek
+      model: deepseek-coder
+
+  # Agentic features
+  agentic:
+    enabled: true
+    maxIterations: 10
+    allowedTools:
+      - read_file
+      - write_file
+      - list_directory
+      - search_codebase
+      - run_terminal_command
+      - web_search
+
+# UI Configuration
+ui:
+  fontSize: 14
+  codeBlockToolbarPosition: top
+  showChatScrollbar: true
+  
+# Analytics and Telemetry
+allowAnonymousTelemetry: false
+
+# Rules Directory
+rulesDirectories:
+  - .continue/rules
+
+# Prompts Directory  
+promptsDirectory: .continue/prompts

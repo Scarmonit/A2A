@@ -1,0 +1,13 @@
+{
+  "mcpServers": [
+    {
+      "name": "a2a-custom-rag",
+      "command": "python",
+      "args": ["./src/rag/mcp/rag_server.py"],
+      "env": {
+        "VOYAGE_API_KEY": "${VOYAGE_API_KEY}",
+        "RAG_DB_PATH": "./data/vector_db"
+      }
+    }
+  ]
+}
