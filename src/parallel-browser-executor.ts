@@ -1,4 +1,4 @@
-import { BrowserAutomationEngine, BrowserTask, ExecutionResult } from './browser-automation-engine';
+import { BrowserAutomationEngine, BrowserTask, ExecutionResult } from './browser-automation-engine.js';
 import { EventEmitter } from 'events';
 import { Worker } from 'worker_threads';
 import { WebSocketServer, WebSocket } from 'ws';

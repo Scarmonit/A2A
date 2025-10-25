@@ -14,9 +14,9 @@ Prerequisites:
 This example follows the structure used by other examples in this repo.
 */
 
-import { A2A } from "../src"; // adjust if examples compile by ts-node with path mapping
-import { Warp } from "../src/integrations/warp"; // Warp terminal integration
-import { OllamaProvider } from "../src/providers/ollama"; // Hypothetical provider path following repo patterns
+import { A2A } from "../src/index.js"; // adjust if examples compile by ts-node with path mapping
+import { Warp } from "../src/integrations/warp.js"; // Warp terminal integration
+import { OllamaProvider } from "../src/providers/ollama.js"; // Hypothetical provider path following repo patterns
 import { z } from "zod";
 
 // If the repository exposes helpers similarly to other providers, we follow that pattern.

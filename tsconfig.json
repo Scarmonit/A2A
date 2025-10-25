@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
-    "moduleResolution": "node",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM"],
     "strict": true,
     "noImplicitAny": false,
@@ -11,6 +11,6 @@
     "outDir": "dist",
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "scripts/**/*", "examples/**/*", "tests/integration/**/*"],
-  "exclude": ["tests/greenlet-integration.test.ts", "tests/enhanced-features.test.ts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "examples", "tests", "scripts"]
 }
