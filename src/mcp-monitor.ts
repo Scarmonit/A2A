@@ -77,7 +77,6 @@ export class MCPServerMonitor {
       this.toolCallHistory = this.toolCallHistory.slice(-this.MAX_HISTORY);
     }
 
-    // Track in analytics engine
     AnalyticsEngine.getInstance().track({
       eventType: 'tool_call',
       data: metrics,
@@ -90,7 +89,7 @@ export class MCPServerMonitor {
   }
 
   /**
-   * Track resource access patterns
+   * Track resource access
    */
   trackResourceAccess(access: ResourceAccess): void {
     this.resourceAccessHistory.push(access);
@@ -99,7 +98,6 @@ export class MCPServerMonitor {
       this.resourceAccessHistory = this.resourceAccessHistory.slice(-this.MAX_HISTORY);
     }
 
-    // Track in analytics engine
     AnalyticsEngine.getInstance().track({
       eventType: 'resource_access',
       data: access,
@@ -111,36 +109,36 @@ export class MCPServerMonitor {
   }
 
   /**
-   * Detect anomalies in recent MCP server calls
+   * Detect anomalies in MCP server behavior
    */
-  detectAnomalies(timeWindowMs: number = 60000): AnalyticsInsight[] {
-    const now = Date.now();
-    const recentCalls = this.serverCallHistory.filter(
-      c => now - c.timestamp.getTime() < timeWindowMs
-    );
-
+  detectAnomalies(): AnalyticsInsight[] {
     const insights: AnalyticsInsight[] = [];
+    const recentCalls = this.serverCallHistory.slice(-100);
+
+    if (recentCalls.length < 10) return insights;
 
     // Check for high error rate
     const errorRate = recentCalls.filter(c => !c.success).length / recentCalls.length;
-    if (errorRate > 0.3 && recentCalls.length > 10) {
+    if (errorRate > 0.2) {
       insights.push({
-        insight: `High error rate detected: ${(errorRate * 100).toFixed(1)}%`,
-        severity: 'high',
-        category: 'performance',
-        suggestedAction: 'Investigate MCP server errors',
+        type: 'anomaly',
+        severity: 'critical',
+        title: 'High MCP Server Error Rate',
+        description: `Error rate is ${(errorRate * 100).toFixed(1)}% in recent calls`,
+        data: { errorRate, recentCalls: recentCalls.length },
         timestamp: new Date()
       });
     }
 
-    // Check for slow response times
+    // Check for slow responses
     const avgDuration = recentCalls.reduce((sum, c) => sum + c.duration, 0) / recentCalls.length;
-    if (avgDuration > 5000 && recentCalls.length > 10) {
+    if (avgDuration > 5000) {
       insights.push({
-        insight: `Slow MCP server response: ${avgDuration.toFixed(0)}ms average`,
-        severity: 'medium',
-        category: 'performance',
-        suggestedAction: 'Review server performance and consider optimization',
+        type: 'performance',
+        severity: 'warning',
+        title: 'Slow MCP Server Responses',
+        description: `Average response time is ${avgDuration.toFixed(0)}ms`,
+        data: { avgDuration, threshold: 5000 },
         timestamp: new Date()
       });
     }
@@ -164,7 +162,6 @@ export class MCPServerMonitor {
     const totalCalls = calls.length;
     const successfulCalls = calls.filter(c => c.success).length;
     const successRate = totalCalls > 0 ? successfulCalls / totalCalls : 0;
-
     const totalDuration = calls.reduce((sum, c) => sum + c.duration, 0);
     const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
 
@@ -192,6 +189,7 @@ export class MCPServerMonitor {
       const total = resources.reduce((sum, r) => sum + r.usage, 0);
       const average = resources.length > 0 ? total / resources.length : 0;
       const peak = resources.length > 0 ? Math.max(...resources.map(r => r.usage)) : 0;
+
       summary.set(type, { total, average, peak });
     });
 
@@ -203,9 +201,11 @@ export class MCPServerMonitor {
    */
   clearHistory(olderThan: Date): void {
     const timestamp = olderThan.getTime();
+
     this.serverCallHistory = this.serverCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.toolCallHistory = this.toolCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.resourceAccessHistory = this.resourceAccessHistory.filter(r => r.timestamp.getTime() > timestamp);
+
     logger.info({ olderThan }, 'Cleared old monitoring history');
   }
 }
