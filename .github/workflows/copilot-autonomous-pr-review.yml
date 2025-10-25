@@ -10,12 +10,10 @@ on:
         description: 'PR number to review'
         required: true
         type: number
-
 permissions:
   contents: write
   pull-requests: write
   issues: write
-
 jobs:
   autonomous-review:
     name: Autonomous Code Review
@@ -26,16 +24,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Get PR details
         id: pr
         uses: actions/github-script@v7
@@ -60,5 +55,9 @@ jobs:
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
             return { pr, files };
-
       - name: Analyze code changes
+        run: |
+          echo "Analyzing PR #${{ steps.pr.outputs.pr_number }}"
+          echo "Files changed: ${{ steps.pr.outputs.files_changed }}"
+          echo "Additions: ${{ steps.pr.outputs.additions }}"
+          echo "Deletions: ${{ steps.pr.outputs.deletions }}"
