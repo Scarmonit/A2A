@@ -146,4 +146,120 @@ const server = new Server(
             case 'remove_agent': { const { id } = params; if (!id) return fail('id is required for remove_agent', 'ERR_BAD_REQUEST'); const success = agentRegistry.remove(id); return ok({ removed: success, agentId: id }); }
             case 'get_stats': { const stats = agentRegistry.getStats(); return ok(stats); }
             case 'generate_agents': { const { count, template } = params; if (!count || count <= 0) { return fail('count > 0 is required for generate_agents', 'ERR_BAD_REQUEST'); } const generated = agentRegistry.generateAgents(count, template); const result = agentRegistry.deployBatch(generated); return ok({ ...result, generated: generated.length }); }
-            case 'filter_agents': { const
+            case 'filter_agents': { const { tags, category, enabled, search } = params; const filter = { tags, category, enabled, search }; const filtered = agentRegistry.list(filter); return ok({ agents: filtered, count: filtered.length }); }
+            case 'create_enhanced_agent': { const { agentType, agentConfig = {} } = params; if (!agentType) { return fail('agentType is required for create_enhanced_agent', 'ERR_BAD_REQUEST'); } try { const agent = createEnhancedAgent(agentType, agentConfig); const success = agentRegistry.deploy(agent); agentOps.inc({ operation: 'create_enhanced' }); return ok({ deployed: success, agent, agentId: agent.id }); } catch (error) { return fail(`Failed to create enhanced agent: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'create_agent_ecosystem': { const { useCase } = params; if (!useCase) { return fail('useCase is required for create_agent_ecosystem', 'ERR_BAD_REQUEST'); } try { const agents = createAgentEcosystem(useCase); const result = agentRegistry.deployBatch(agents); agentOps.inc({ operation: 'create_ecosystem' }); return ok({ ...result, agents, useCase }); } catch (error) { return fail(`Failed to create agent ecosystem: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'list_enhanced_types': { return ok({ agentTypes: Object.values(ENHANCED_AGENT_TYPES), useCases: ['web-development', 'data-analysis', 'content-marketing', 'devops'], capabilities: { [ENHANCED_AGENT_TYPES.WEB_SCRAPER]: ['Advanced web scraping with pagination', 'Data extraction', 'Export to multiple formats'], [ENHANCED_AGENT_TYPES.CONTENT_WRITER]: ['SEO-optimized content generation', 'Multiple content types', 'Tone customization'], [ENHANCED_AGENT_TYPES.DATA_ANALYST]: ['Comprehensive data analysis', 'Statistical insights', 'Visualization generation'], [ENHANCED_AGENT_TYPES.API_TESTER]: ['API testing automation', 'Performance testing', 'Report generation'], [ENHANCED_AGENT_TYPES.DEPLOY_MANAGER]: ['Multi-platform deployment', 'CI/CD automation', 'Health monitoring'], [ENHANCED_AGENT_TYPES.SECURITY_SCANNER]: ['Vulnerability scanning', 'Compliance checking', 'Automated remediation'] } }); }
+            case 'execute_practical_tool': { const { toolName, toolParams = {}, executionContext = {} } = params; if (!toolName) { return fail('toolName is required for execute_practical_tool', 'ERR_BAD_REQUEST'); } try { const context = { agentId: 'system', requestId: ensureRequestId(), workingDirectory: process.cwd(), permissions: ['*'], limits: { maxExecutionTime: 300000, maxFileSize: 50 * 1024 * 1024 }, ...executionContext }; const result = await practicalToolRegistry.execute(toolName, toolParams, context); agentOps.inc({ operation: 'execute_tool' }); return ok(result); } catch (error) { return fail(`Failed to execute practical tool: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'list_practical_tools': { const { toolCategory } = params; const tools = practicalToolRegistry.list(toolCategory); const categories = practicalToolRegistry.getCategories(); return ok({ tools, categories, count: tools.length }); }
+            case 'create_advanced_agent': { const { agentType, agentConfig = {} } = params; if (!agentType) { return fail('agentType is required for create_advanced_agent', 'ERR_BAD_REQUEST'); } try { const agent = createAdvancedAgent(agentType, agentConfig); const success = agentRegistry.deploy(agent); agentOps.inc({ operation: 'create_advanced' }); return ok({ deployed: success, agent, agentId: agent.id }); } catch (error) { return fail(`Failed to create advanced agent: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'create_advanced_ecosystem': { const { useCase } = params; if (!useCase) { return fail('useCase is required for create_advanced_ecosystem', 'ERR_BAD_REQUEST'); } try { const agents = createAdvancedEcosystem(useCase); const result = agentRegistry.deployBatch(agents); agentOps.inc({ operation: 'create_advanced_ecosystem' }); return ok({ ...result, agents, useCase }); } catch (error) { return fail(`Failed to create advanced ecosystem: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'list_advanced_types': { return ok({ agentTypes: Object.values(ADVANCED_AGENT_TYPES), useCases: ['full-stack-automation', 'business-automation', 'ml-operations', 'enterprise-integration'], capabilities: { [ADVANCED_AGENT_TYPES.EMAIL_AUTOMATOR]: ['SMTP integration', 'Campaign tracking', 'Response processing', 'Automation rules'], [ADVANCED_AGENT_TYPES.DATABASE_MANAGER]: ['Multi-DB support', 'Query optimization', 'Backup automation', 'Performance tuning'], [ADVANCED_AGENT_TYPES.CLOUD_ORCHESTRATOR]: ['Multi-cloud deployment', 'Infrastructure as Code', 'Cost optimization', 'Auto-scaling'], [ADVANCED_AGENT_TYPES.ML_PIPELINE_MANAGER]: ['End-to-end ML pipelines', 'Model training', 'Hyperparameter tuning', 'Deployment automation'], [ADVANCED_AGENT_TYPES.WORKFLOW_ORCHESTRATOR]: ['Complex workflows', 'External integrations', 'Error handling', 'Parallel execution'], [ADVANCED_AGENT_TYPES.REAL_TIME_MONITOR]: ['Real-time metrics', 'Intelligent alerting', 'Dashboard creation', 'Multi-channel notifications'] } }); }
+            case 'execute_advanced_tool': { const { toolName, toolParams = {}, executionContext = {} } = params; if (!toolName) { return fail('toolName is required for execute_advanced_tool', 'ERR_BAD_REQUEST'); } try { const context = { agentId: 'system', requestId: ensureRequestId(), workingDirectory: process.cwd(), permissions: ['*'], limits: { maxExecutionTime: 600000, maxFileSize: 100 * 1024 * 1024 }, ...executionContext }; const result = await advancedToolRegistry.execute(toolName, toolParams, context); agentOps.inc({ operation: 'execute_advanced_tool' }); return ok(result); } catch (error) { return fail(`Failed to execute advanced tool: ${error instanceof Error ? error.message : String(error)}`, 'ERR_INTERNAL'); } }
+            case 'list_advanced_tools': { const { toolCategory } = params; const tools = advancedToolRegistry.list(toolCategory); const categories = advancedToolRegistry.getCategories(); return ok({ tools, categories, count: tools.length }); }
+            case 'grant_permission': { const { id, targetAgentId, permission, delegable, expiresIn, reason } = params; if (!id || !targetAgentId || !permission) { return fail('id, targetAgentId, and permission are required', 'ERR_BAD_REQUEST'); } const result = await permissionManager.grantPermission(id, targetAgentId, permission, { delegable, expiresIn, reason }); return ok(result); }
+            case 'request_permission': { const { id, targetAgentId, permission, reason, expiresIn } = params; if (!id || !targetAgentId || !permission || !reason) { return fail('id, targetAgentId, permission, and reason are required', 'ERR_BAD_REQUEST'); } const result = await permissionManager.requestPermission(id, targetAgentId, permission, reason, expiresIn); return ok(result); }
+            case 'approve_permission': { const { id, requestId, reason } = params; if (!id || !requestId) { return fail('id and requestId are required', 'ERR_BAD_REQUEST'); } const result = await permissionManager.approvePermissionRequest(id, requestId, reason); return ok(result); }
+            case 'revoke_permission': { const { id, grantId, reason } = params; if (!id || !grantId) { return fail('id and grantId are required', 'ERR_BAD_REQUEST'); } const result = permissionManager.revokePermission(id, grantId, reason); return ok(result); }
+            case 'get_permissions': { const { id } = params; if (!id) return fail('id is required', 'ERR_BAD_REQUEST'); const permissions = permissionManager.getAgentPermissions(id); const pendingRequests = permissionManager.getPendingRequests(id); return ok({ permissions, pendingRequests }); }
+            case 'create_mcp_server': { const { id, mcpConfig } = params; if (!id) return fail('id is required', 'ERR_BAD_REQUEST'); const result = await agentMCPManager.createAgentMCPServer(id, mcpConfig || {}); return ok(result); }
+            case 'add_tool_to_agent': { const { id, tool } = params; if (!id || !tool) { return fail('id and tool are required', 'ERR_BAD_REQUEST'); } const result = await agentMCPManager.addToolToAgent(id, tool); return ok(result); }
+            case 'share_tool': { const { providerAgentId, consumerAgentId, toolName, shareOptions } = params; if (!providerAgentId || !consumerAgentId || !toolName) { return fail('providerAgentId, consumerAgentId, and toolName are required', 'ERR_BAD_REQUEST'); } const result = await agentMCPManager.shareToolWithAgent(providerAgentId, consumerAgentId, toolName, shareOptions || {}); return ok(result); }
+            case 'connect_to_agent_mcp': { const { id, targetAgentId } = params; if (!id || !targetAgentId) { return fail('id and targetAgentId are required', 'ERR_BAD_REQUEST'); } const result = await agentMCPManager.connectToAgentMCP(id, targetAgentId); return ok(result); }
+            case 'execute_shared_tool': { const { consumerAgentId, providerAgentId, toolName, toolParams } = params; if (!consumerAgentId || !providerAgentId || !toolName) { return fail('consumerAgentId, providerAgentId, and toolName are required', 'ERR_BAD_REQUEST'); } const result = await agentMCPManager.executeSharedTool(consumerAgentId, providerAgentId, toolName, toolParams || {}); return ok(result); }
+            case 'discover_tools': { const { discoveryFilters } = params; const tools = agentMCPManager.discoverTools(discoveryFilters || {}); return ok({ tools, count: tools.length }); }
+            case 'get_sharing_agreements': { const { id } = params; if (!id) return fail('id is required', 'ERR_BAD_REQUEST'); const agreements = agentMCPManager.getSharingAgreements(id); return ok(agreements); }
+            default: return fail(`Unknown action: ${action}`, 'ERR_BAD_REQUEST');
+          }
+        },
+      },
+    },
+  } as any
+);
+
+function getAgentPermissions(agentId: string): string[] {
+  const agent = agentRegistry.get(agentId);
+  if (!agent) return ['file:read'];
+  switch (agent.category) {
+    case 'web_automation': return ['network:http', 'file:write', 'file:read'];
+    case 'content_creation': return ['file:write', 'file:read'];
+    case 'data_processing': return ['file:read', 'file:write', 'data:process'];
+    case 'testing': return ['network:http', 'file:write', 'file:read', 'system:read'];
+    case 'devops': return ['*'];
+    case 'security': return ['file:read', 'network:http', 'system:read'];
+    case 'system': return ['system:read', 'system:execute', 'file:read'];
+    case 'file_operations': return ['file:read', 'file:write', 'file:delete'];
+    default: return ['file:read', 'file:write', 'network:http'];
+  }
+}
+
+async function runAgentJob(requestId: string, input: any) {
+  const r = requests.get(requestId)!;
+  r.status = 'running';
+  r.updatedAt = Date.now();
+  streamHub?.broadcast(requestId, { type: 'start', requestId, ts: Date.now() });
+  logger.info({ requestId, agentId: r.agentId, capability: r.capability }, 'agent job started');
+  try {
+    const context = { agentId: r.agentId, requestId, workingDirectory: process.cwd(), permissions: getAgentPermissions(r.agentId), limits: { maxExecutionTime: 60000, maxFileSize: 10 * 1024 * 1024 } };
+    streamHub?.broadcast(requestId, { type: 'chunk', requestId, ts: Date.now(), content: `Executing ${r.agentId} with capability ${r.capability}...\n` });
+    const result = await agentExecutor.executeAgent(r.agentId, r.capability, input, context);
+    if (result.success) {
+      if (result.toolsUsed.length > 0) { streamHub?.broadcast(requestId, { type: 'chunk', requestId, ts: Date.now(), content: `Tools used: ${result.toolsUsed.join(', ')}\n` }); }
+      if (result.changes.filesCreated?.length) { streamHub?.broadcast(requestId, { type: 'chunk', requestId, ts: Date.now(), content: `Files created: ${result.changes.filesCreated.join(', ')}\n` }); }
+      r.status = 'done';
+      r.result = { agentResult: result.result, toolsUsed: result.toolsUsed, executionTime: result.executionTime, changes: result.changes };
+      streamHub?.broadcast(requestId, { type: 'final', requestId, ts: Date.now(), result: r.result });
+      reqCompleted.inc({ status: 'done' });
+      logger.info({ requestId, toolsUsed: result.toolsUsed.length, executionTime: result.executionTime }, 'agent job completed');
+    } else {
+      r.status = 'error';
+      r.error = result.error;
+      streamHub?.broadcast(requestId, { type: 'error', requestId, ts: Date.now(), message: result.error || 'Agent execution failed' });
+      reqCompleted.inc({ status: 'error' });
+      logger.error({ requestId, error: result.error }, 'agent job failed');
+    }
+  } catch (error) {
+    r.status = 'error';
+    r.error = error instanceof Error ? error.message : String(error);
+    streamHub?.broadcast(requestId, { type: 'error', requestId, ts: Date.now(), message: r.error });
+    reqCompleted.inc({ status: 'error' });
+    logger.error({ requestId, error: r.error }, 'agent job crashed');
+  }
+  r.updatedAt = Date.now();
+}
+
+initializeZeroClick();
+
+if (METRICS_PORT > 0) {
+  const srv = http.createServer(async (req, res) => {
+    if (!req.url) { res.statusCode = 404; res.end(); return; }
+    const u = new URL(req.url, 'http://localhost');
+    logger.debug({ url: req.url, path: u.pathname }, 'metrics request');
+    if (u.pathname === '/metrics') { res.setHeader('Content-Type', registry.contentType); res.end(await registry.metrics()); return; }
+    if (u.pathname === '/healthz') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, queue: queue.length, running })); return; }
+    if (u.pathname === '/demo' || u.pathname.startsWith('/demo/')) {
+      try {
+        const msg = u.searchParams.get('msg') ?? 'Hello from demo';
+        const agentId = u.searchParams.get('agent') ?? 'echo';
+        const capability = u.searchParams.get('capability') ?? 'chat';
+        const input = { messages: [{ role: 'user', content: msg }] };
+        const r = await invokeAgentInternal({ agentId, capability, input });
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(r));
+      } catch (e: any) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, error: { message: String(e?.message || e) } }));
+      }
+      return;
+    }
+    res.statusCode = 404; res.end('not found');
+  });
+  srv.listen(METRICS_PORT, () => logger.info({ port: METRICS_PORT }, 'metrics server listening'));
+}
+
+await server.connect(new StdioServerTransport());
+
+process.on('SIGINT', () => { try { streamHub?.close(); } catch {} process.exit(0); });
+process.on('SIGTERM', () => { try { streamHub?.close(); } catch {} process.exit(0); });
+
+logger.info({ url: streamHub?.urlBase || 'stdio-only', maxConcurrency: MAX_CONCURRENCY }, 'A2A MCP server ready');
