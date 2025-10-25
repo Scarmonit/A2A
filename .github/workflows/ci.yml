@@ -1,11 +1,10 @@
 name: CI - Lint and Test
 on:
   push:
-    branches: [ main, develop, 'feature/**', 'fix/**', 'chore/**' ]
+    branches: [ master, develop, 'feature/**', 'fix/**', 'chore/**' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   workflow_dispatch:
-
 jobs:
   lint:
     name: Lint Code
@@ -26,7 +25,6 @@ jobs:
         run: |
           echo "Code formatting check completed"
           # Add prettier or eslint here if configured
-
   build:
     name: Build Project
     runs-on: ubuntu-latest
@@ -49,7 +47,6 @@ jobs:
           name: build-artifacts
           path: dist/
           retention-days: 7
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
