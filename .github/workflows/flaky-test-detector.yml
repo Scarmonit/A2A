@@ -1,0 +1,219 @@
+name: Flaky Test Detector
+
+on:
+  workflow_run:
+    workflows: ["CI - Lint and Test"]
+    types: [completed]
+  schedule:
+    # Run every 6 hours to analyze test patterns
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  detect-flaky-tests:
+    name: Detect and Report Flaky Tests
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 100  # Fetch enough history to analyze patterns
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download test artifacts
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+        continue-on-error: true
+
+      - name: Analyze test patterns
+        id: analyze
+        run: |
+          # Create analysis script
+          cat > analyze-flaky-tests.js << 'EOF'
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+
+          // Get recent workflow runs
+          const runs = execSync('git log --all --grep="test" --oneline -20').toString().split('\n');
+
+          // Analyze test failure patterns
+          const flakyTests = [];
+          const testFailures = {};
+
+          // Parse test results if available
+          if (fs.existsSync('test-results')) {
+            const files = fs.readdirSync('test-results');
+            files.forEach(file => {
+              try {
+                const content = fs.readFileSync(`test-results/${file}`, 'utf8');
+                const failures = content.match(/FAIL.*?test/gi) || [];
+                failures.forEach(failure => {
+                  const testName = failure.replace(/FAIL\s+/, '');
+                  testFailures[testName] = (testFailures[testName] || 0) + 1;
+                });
+              } catch (e) {
+                console.log(`Could not parse ${file}`);
+              }
+            });
+          }
+
+          // Identify flaky tests (failed multiple times but not always)
+          Object.entries(testFailures).forEach(([test, count]) => {
+            if (count >= 2 && count < runs.length) {
+              flakyTests.push({
+                name: test,
+                failures: count,
+                total: runs.length,
+                rate: ((count / runs.length) * 100).toFixed(2)
+              });
+            }
+          });
+
+          // Output results
+          const output = {
+            hasFlaky: flakyTests.length > 0,
+            count: flakyTests.length,
+            tests: flakyTests
+          };
+
+          console.log(JSON.stringify(output, null, 2));
+          fs.writeFileSync('flaky-test-report.json', JSON.stringify(output, null, 2));
+
+          // Set GitHub output
+          console.log(`has_flaky=${output.hasFlaky}`);
+          console.log(`flaky_count=${output.count}`);
+          EOF
+
+          node analyze-flaky-tests.js > analysis-output.txt
+
+          # Extract outputs
+          HAS_FLAKY=$(grep "has_flaky=" analysis-output.txt | cut -d= -f2 || echo "false")
+          FLAKY_COUNT=$(grep "flaky_count=" analysis-output.txt | cut -d= -f2 || echo "0")
+
+          echo "has_flaky=${HAS_FLAKY}" >> $GITHUB_OUTPUT
+          echo "flaky_count=${FLAKY_COUNT}" >> $GITHUB_OUTPUT
+
+          # Create markdown report
+          if [ -f flaky-test-report.json ]; then
+            cat > flaky-report.md << 'MDEOF'
+          # Flaky Test Report
+
+          **Generated**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Workflow Run**: ${{ github.event.workflow_run.html_url || 'Scheduled analysis' }}
+
+          ## Summary
+
+          MDEOF
+
+            node -e "
+              const report = require('./flaky-test-report.json');
+              if (report.hasFlaky) {
+                console.log(\`Found **\${report.count}** flaky test(s)\n\n## Flaky Tests Detected\n\`);
+                report.tests.forEach((test, i) => {
+                  console.log(\`\n### \${i + 1}. \${test.name}\n\`);
+                  console.log(\`- **Failure Rate**: \${test.rate}%\`);
+                  console.log(\`- **Failures**: \${test.failures}/\${test.total} runs\`);
+                  console.log(\`- **Severity**: \${test.rate > 50 ? '🔴 High' : test.rate > 20 ? '🟡 Medium' : '🟢 Low'}\`);
+                });
+              } else {
+                console.log('✅ No flaky tests detected in recent runs.');
+              }
+            " >> flaky-report.md
+          fi
+
+      - name: Create GitHub Issue for flaky tests
+        if: steps.analyze.outputs.has_flaky == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('flaky-report.md', 'utf8');
+            const reportData = JSON.parse(fs.readFileSync('flaky-test-report.json', 'utf8'));
+
+            // Check if there's already an open issue for flaky tests
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'flaky-test',
+              per_page: 1
+            });
+
+            const issueBody = report + `\n\n---\n\n## Recommended Actions\n\n` +
+              `1. Review the failing tests and identify common patterns\n` +
+              `2. Add retry logic or increase timeouts for timing-sensitive tests\n` +
+              `3. Check for race conditions or environment-dependent behavior\n` +
+              `4. Consider quarantining tests with >50% failure rate\n\n` +
+              `**Auto-generated by Flaky Test Detector**\n` +
+              `Run ID: ${{ github.run_id }}`;
+
+            if (existingIssues.data.length > 0) {
+              // Update existing issue
+              const issue = existingIssues.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `## Updated Flaky Test Report\n\n${issueBody}`
+              });
+              console.log(`Updated existing issue #${issue.number}`);
+            } else {
+              // Create new issue
+              const newIssue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🔄 Flaky Tests Detected: ${reportData.count} test(s) failing intermittently`,
+                body: issueBody,
+                labels: ['flaky-test', 'ci', 'needs-investigation']
+              });
+              console.log(`Created new issue #${newIssue.data.number}`);
+            }
+
+      - name: Upload flaky test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-test-report
+          path: |
+            flaky-test-report.json
+            flaky-report.md
+          retention-days: 30
+
+      - name: Comment on PR if applicable
+        if: steps.analyze.outputs.has_flaky == 'true' && github.event.workflow_run.event == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('flaky-report.md', 'utf8');
+
+            // Get PR number from workflow run
+            const prNumber = context.payload.workflow_run.pull_requests[0]?.number;
+
+            if (prNumber) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `## ⚠️ Flaky Test Warning\n\n${report}\n\n` +
+                      `Please review these tests before merging.`
+              });
+            }

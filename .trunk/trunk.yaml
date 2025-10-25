@@ -40,26 +40,34 @@ lint:
         - .trunk/**
         - https:/github.com/Scarmonit/A2A.git/**
 
-  # Enabled linters
+  # Enabled linters - Optimized for performance
   enabled:
     # JavaScript/TypeScript linters
     - eslint@9.14.0:
         commands:
           - name: lint
-            run: eslint --cache --cache-location .trunk/out/eslint-cache ${target}
+            run: eslint --cache --cache-location .trunk/out/eslint-cache --max-warnings 0 ${target}
         environment:
           - name: NODE_ENV
             value: production
-    
+        # Auto-fix on pre-commit
+        fixes: true
+        cache: true
+
     - prettier@3.3.3:
         commands:
           - name: format
             run: prettier --cache --cache-location .trunk/out/prettier-cache --write ${target}
-    
+        # Auto-fix formatting issues
+        fixes: true
+        cache: true
+
     - typescript@5.6.3:
         commands:
           - name: check
-            run: tsc --noEmit
+            run: tsc --noEmit --incremental
+        # Enable incremental compilation for faster checks
+        cache: true
     
     # YAML/Config linters
     - yamllint@1.35.1:
@@ -135,12 +143,20 @@ actions:
     - trunk-fmt-pre-commit
     - trunk-upgrade-available
 
-# Merge queue configuration
+# Merge queue configuration - Optimized for fast throughput
 merge:
   required_statuses:
     - trunk-check
     - build
     - test
+
+  # Batch configuration for merge queue
+  batch_size: 5  # Merge up to 5 PRs at once (adjust based on metrics)
+  batch_delay: 300  # Wait 5 minutes before processing batch
+
+  # Retry configuration
+  max_retries: 2
+  retry_delay: 60  # Wait 1 minute between retries
   
 # CI Integration
 ci:
@@ -197,3 +213,27 @@ api:
 hold_the_line:
   enabled: true
   threshold: medium
+
+# Performance optimizations
+performance:
+  # Parallel linter execution
+  parallel: true
+  max_workers: 4
+
+  # Cache configuration
+  cache:
+    enabled: true
+    ttl: 86400  # 24 hours
+
+  # Incremental checking
+  incremental: true
+
+# Notifications configuration
+notifications:
+  # Notify on lint failures
+  on_failure:
+    - slack  # Configure webhook in CI
+    - github_status
+
+  # Suppress notifications for auto-fixed issues
+  suppress_auto_fixed: true
