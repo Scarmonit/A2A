@@ -1,7 +1,6 @@
 // src/parallel-executor-enhanced.ts
 // Enhanced parallel executor with context-aware execution, batching, retries, browser automation coordination,
 // configuration management, result streaming, error recovery, progress tracking, and resource pooling.
-
 import { execa } from 'execa'
 import WebSocket, { WebSocketServer } from 'ws'
 
@@ -71,270 +70,222 @@ export type ProgressEvent = {
     | 'task:start'
     | 'task:finish'
     | 'task:retry'
-    | 'batch:flush'
-    | 'resource:acquire'
-    | 'resource:release'
     | 'log'
-  payload: any
+  payload: Record<string, unknown>
   ts: number
 }
 
-// ---------- Lightweight Resource Pool ----------
+export type TaskContext = {
+  request: (req: ApiBatchRequest) => Promise<ApiBatchResponse>
+  browser: (cmds: BrowserCommand[]) => Promise<void>
+  acquire: (name: string, amount: number) => Promise<() => void>
+}
+
+// ---------- Utils ----------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+const DEFAULT_CFG: ExecutorConfig = {
+  concurrency: 4,
+  maxRetries: 3,
+  retryBackoffMs: 1000,
+  progressIntervalMs: 5000,
+  batch: { maxSize: 10, maxWaitMs: 500 }
+}
+
+// Resource pool (semaphore-like)
 class ResourcePool {
-  private limits: Record<string, number>
-  private inUse: Record<string, number>
-  private waiters: Record<string, Array<() => void>>
+  private pools = new Map<string, { tokens: number; queue: Array<(release: () => void) => void> }>()
 
-  constructor(limits: Record<string, number> = {}) {
-    this.limits = { ...limits }
-    this.inUse = {}
-    this.waiters = {}
-  }
-
-  async acquire(name: string, amount = 1) {
-    if (!this.limits[name]) this.limits[name] = Infinity
-    if (!this.inUse[name]) this.inUse[name] = 0
-    if (!this.waiters[name]) this.waiters[name] = []
-
-    const canAcquire = () => this.inUse[name] + amount <= this.limits[name]
-    if (canAcquire()) {
-      this.inUse[name] += amount
-      return () => this.release(name, amount)
-    }
-
-    await new Promise<void>((resolve) => this.waiters[name].push(resolve))
-    this.inUse[name] += amount
-    return () => this.release(name, amount)
-  }
-
-  private release(name: string, amount = 1) {
-    this.inUse[name] = Math.max(0, (this.inUse[name] || 0) - amount)
-    const next = this.waiters[name]?.shift()
-    if (next) next()
-  }
-}
-
-// ---------- Result Streamer ----------
-class ResultStreamer {
-  private ws?: WebSocket
-  private wss?: WebSocketServer
-  private buffer: any[] = []
-  private connected = false
-
-  constructor(cfg?: ExecutorConfig['ws']) {
-    if (!cfg) return
-    if (cfg.port) {
-      this.wss = new WebSocketServer({ port: cfg.port })
-      this.wss.on('connection', (socket) => {
-        this.ws = socket
-        this.connected = true
-        // flush buffer
-        for (const msg of this.buffer) socket.send(JSON.stringify(msg))
-        this.buffer = []
-        socket.on('close', () => {
-          this.connected = false
-          this.ws = undefined
-        })
-      })
-    } else if (cfg.url) {
-      this.ws = new WebSocket(cfg.url)
-      this.ws.onopen = () => {
-        this.connected = true
-        for (const msg of this.buffer) this.ws?.send(JSON.stringify(msg))
-        this.buffer = []
-      }
-      this.ws.onclose = () => {
-        this.connected = false
-      }
+  constructor(private limits: Record<string, number> = { default: 4 }) {
+    for (const [name, limit] of Object.entries(this.limits)) {
+      this.pools.set(name, { tokens: limit, queue: [] })
     }
   }
 
-  send(ev: ProgressEvent) {
-    if (this.ws && this.connected) {
-      try { this.ws.send(JSON.stringify(ev)) } catch (_) { /* noop */ }
-    } else if (this.wss && this.connected) {
-      try {
-        this.wss.clients.forEach((c) => c.send(JSON.stringify(ev)))
-      } catch (_) { /* noop */ }
-    } else {
-      this.buffer.push(ev)
-    }
-  }
-}
+  async acquire(name: string, amount = 1): Promise<() => void> {
+    const pool = this.pools.get(name)
+    if (!pool) throw new Error(`Unknown resource pool: ${name}`)
 
-// ---------- API Batcher with Retry ----------
-class ApiBatcher {
-  private queue: ApiBatchRequest[] = []
-  private timer?: NodeJS.Timeout
-  private inflight = false
-  constructor(
-    private cfg: Required<ExecutorConfig>['batch'],
-    private retry: (fn: () => Promise<any>) => Promise<any>,
-    private emit: (ev: ProgressEvent) => void,
-  ) {}
-
-  add(req: ApiBatchRequest): Promise<ApiBatchResponse> {
     return new Promise((resolve) => {
-      // store resolver within request
-      // @ts-ignore
-      req.__resolve = resolve
-      this.queue.push(req)
-      this.schedule()
+      const tryAcquire = () => {
+        if (pool.tokens >= amount) {
+          pool.tokens -= amount
+          const release = () => {
+            pool.tokens += amount
+            // Process queue
+            const next = pool.queue.shift()
+            if (next) next(release)
+          }
+          resolve(release)
+        } else {
+          pool.queue.push(tryAcquire)
+        }
+      }
+      tryAcquire()
     })
   }
+}
 
-  private schedule() {
-    if (this.queue.length >= this.cfg.maxSize) return void this.flush()
-    if (this.timer) return
-    this.timer = setTimeout(() => this.flush(), this.cfg.maxWaitMs)
-  }
-
-  private async flush() {
-    if (this.inflight) return
-    this.inflight = true
-    clearTimeout(this.timer as any)
-    this.timer = undefined
-
-    const batch = this.queue.splice(0, this.cfg.maxSize)
-    if (batch.length === 0) { this.inflight = false; return }
-
-    this.emit({ type: 'batch:flush', payload: { size: batch.length }, ts: Date.now() })
-
-    const exec = async () => {
-      // Example: send to a generic batching endpoint
-      const res = await fetch('/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch.map(({ endpoint, method, headers, body }) => ({ endpoint, method, headers, body }))),
-      })
-      const data = await res.json()
-      return { status: res.status, data }
-    }
-
+// Retry with exponential backoff
+async function retry<T>(fn: () => Promise<T>, id: string, maxRetries = 3, baseBackoff = 1000): Promise<T> {
+  let attempt = 0
+  while (attempt <= maxRetries) {
     try {
-      const { status, data } = await this.retry(exec)
-      // Resolve per item
-      batch.forEach((req, i) => {
-        // @ts-ignore
-        const resolve: (v: ApiBatchResponse) => void = req.__resolve
-        const item = data?.[i]
-        resolve({ ok: status >= 200 && status < 300, status: item?.status ?? status, data: item?.data, error: item?.error })
-      })
+      return await fn()
     } catch (e: any) {
-      batch.forEach((req) => {
-        // @ts-ignore
-        const resolve: (v: ApiBatchResponse) => void = req.__resolve
-        resolve({ ok: false, status: 0, error: e?.message || 'Batch failed' })
-      })
-    } finally {
-      this.inflight = false
+      attempt++
+      if (attempt > maxRetries) throw e
+      const backoff = baseBackoff * Math.pow(2, attempt - 1) + Math.random() * 1000
+      await sleep(backoff)
+    }
+  }
+  throw new Error('Retry exhausted')
+}
+
+// WebSocket server for progress events
+function startWsServer(port: number, onConnection?: (ws: WebSocket) => void): WebSocketServer {
+  const wss = new WebSocketServer({ port })
+  wss.on('connection', (ws) => {
+    if (onConnection) onConnection(ws)
+  })
+  return wss
+}
+
+// Browser automation helper
+async function runBrowserCommands(
+  commands: BrowserCommand[],
+  emitFn: (event: ProgressEvent) => void
+): Promise<void> {
+  for (const cmd of commands) {
+    emitFn({ type: 'log', payload: { scope: 'browser', cmd }, ts: Date.now() })
+    
+    // Spawn browser automation process
+    const child = execa('node', ['automation/run-browser.js'])
+    
+    try {
+      // Write command to stdin
+      if (child.stdin) {
+        child.stdin.write(JSON.stringify(cmd))
+        child.stdin.end()
+      }
+      
+      await child
+    } catch (e: any) {
+      emitFn({ type: 'log', payload: { scope: 'browser-error', error: e.message }, ts: Date.now() })
+      throw e
     }
   }
 }
 
-// ---------- Retry helper ----------
-function withRetry<T>(maxRetries: number, backoffMs: number, emit: (ev: ProgressEvent) => void) {
-  return async (fn: () => Promise<T>, id?: string): Promise<T> => {
-    let attempt = 0
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      try {
-        return await fn()
-      } catch (e: any) {
-        if (attempt >= maxRetries) throw e
-        emit({ type: 'task:retry', payload: { id, attempt, error: e?.message }, ts: Date.now() })
-        const wait = backoffMs * Math.pow(2, attempt)
-        await new Promise((r) => setTimeout(r, wait))
-        attempt++
+// API batch request helper
+async function makeRequest(req: ApiBatchRequest): Promise<ApiBatchResponse> {
+  const { endpoint, method = 'GET', headers = {}, body } = req
+  
+  try {
+    const response = await fetch(endpoint, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: body ? JSON.stringify(body) : undefined
+    })
+    
+    const data = response.headers.get('content-type')?.includes('application/json')
+      ? await response.json()
+      : await response.text()
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      data: response.ok ? data : undefined,
+      error: response.ok ? undefined : (typeof data === 'string' ? data : JSON.stringify(data))
+    }
+  } catch (e: any) {
+    return {
+      ok: false,
+      status: 0,
+      error: e.message
+    }
+  }
+}
+
+// ---------- Main Class ----------
+
+export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
+  private cfg: ExecutorConfig
+  private pool: ResourcePool
+  private results = new Map<string, TaskResult<TOut>>()
+  private wss?: WebSocketServer
+  private connections = new Set<WebSocket>()
+
+  constructor(config: Partial<ExecutorConfig> = {}) {
+    this.cfg = { ...DEFAULT_CFG, ...config }
+    
+    const limits = this.cfg.resourcePool?.limits || { default: this.cfg.concurrency }
+    this.pool = new ResourcePool(limits)
+
+    // Start WebSocket server if configured
+    if (this.cfg.ws?.port) {
+      this.wss = startWsServer(this.cfg.ws.port, (ws) => {
+        this.connections.add(ws)
+        ws.on('close', () => this.connections.delete(ws))
+      })
+    }
+  }
+
+  private emit(event: ProgressEvent): void {
+    // Broadcast to WebSocket connections
+    for (const ws of this.connections) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(event))
       }
     }
   }
-}
 
-// ---------- Browser automation coordinator (shellable) ----------
-async function runBrowserCommands(commands: BrowserCommand[], emit: (ev: ProgressEvent) => void) {
-  // This integrates via execa to call an external headless browser runner, passing commands as JSON.
-  const cmd = JSON.stringify(commands)
-  emit({ type: 'log', payload: { scope: 'browser', message: `Executing ${commands.length} commands` }, ts: Date.now() })
-  const child = execa('node', ['automation/run-browser.js'], { input: cmd })
-  const { stdout } = await child
-  return stdout
-}
-
-// ---------- Executor ----------
-export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
-  private cfg: Required<ExecutorConfig>
-  private streamer: ResultStreamer
-  private pool: ResourcePool
-  private batcher?: ApiBatcher
-  private results: Map<string, TaskResult<TOut>> = new Map()
-
-  constructor(cfg?: Partial<ExecutorConfig>) {
-    this.cfg = {
-      concurrency: 8,
-      maxRetries: 2,
-      retryBackoffMs: 250,
-      ws: undefined,
-      batch: { maxSize: 20, maxWaitMs: 50 },
-      resourcePool: { limits: {} },
-      progressIntervalMs: 1000,
-      ...cfg,
-    }
-    this.streamer = new ResultStreamer(this.cfg.ws)
-    this.pool = new ResourcePool(this.cfg.resourcePool?.limits)
-    this.batcher = new ApiBatcher(this.cfg.batch!, withRetry(this.cfg.maxRetries, this.cfg.retryBackoffMs, this.emit), this.emit)
+  private async request(req: ApiBatchRequest): Promise<ApiBatchResponse> {
+    return makeRequest(req)
   }
 
-  private emit = (ev: ProgressEvent) => {
-    this.streamer.send(ev)
-  }
-
-  // Context-aware helper
-  private enrichInput(input: TaskInput<TIn>): TaskInput<TIn> {
-    const metadata = {
-      hasSelection: Boolean(input.context?.selectedText?.trim()),
-      isWebTask: Boolean(input.context?.currentTabUrl),
-    }
-    return {
-      ...input,
-      context: { ...(input.context || {}), metadata: { ...(input.context?.metadata || {}), ...metadata } },
-    }
-  }
-
-  // Public: queue API request through batcher
-  request(req: ApiBatchRequest) { return this.batcher!.add(req) }
-
-  // Core run method
-  async run(tasks: Array<TaskInput<TIn>>, worker: (task: TaskInput<TIn>, helpers: {
-    request: (req: ApiBatchRequest) => Promise<ApiBatchResponse>
-    browser: (cmds: BrowserCommand[]) => Promise<any>
-    acquire: (name: string, amount?: number) => Promise<() => void>
-  }) => Promise<TOut>): Promise<TaskResult<TOut>[]> {
+  async run(
+    tasks: TaskInput<TIn>[],
+    worker: (task: TaskInput<TIn>, ctx: TaskContext) => Promise<TOut>
+  ): Promise<TaskResult<TOut>[]> {
+    this.results.clear()
     this.emit({ type: 'executor:start', payload: { total: tasks.length }, ts: Date.now() })
 
-    // resolve dependencies naive topological processing by attempting until all done
-    const pending = new Map(tasks.map((t) => [t.id, this.enrichInput(t)]))
+    // Sort tasks by priority (higher first), then by dependency order
+    const sorted = [...tasks].sort((a, b) => (b.priority || 0) - (a.priority || 0))
+    
+    const pending = new Map(sorted.map(t => [t.id, t]))
     const completed = new Set<string>()
-
+    
+    // Helper to find ready tasks (no unmet dependencies)
     const takeReady = () => {
       const ready: TaskInput<TIn>[] = []
-      for (const t of pending.values()) {
-        const deps = t.requires || []
-        if (deps.every((d) => completed.has(d))) ready.push(t)
+      for (const task of pending.values()) {
+        const deps = task.requires || []
+        if (deps.every(d => completed.has(d))) {
+          ready.push(task)
+        }
       }
-      // sort by priority desc
-      ready.sort((a, b) => (b.priority || 0) - (a.priority || 0))
-      return ready.slice(0, this.cfg.concurrency)
+      return ready.slice(0, this.cfg.concurrency) // limit to concurrency
     }
 
+    // Process one task
     const runOne = async (t: TaskInput<TIn>) => {
-      const startedAt = Date.now()
-      this.emit({ type: 'task:start', payload: { id: t.id }, ts: startedAt })
-      const result: TaskResult<TOut> = { id: t.id, status: 'success', startedAt, endedAt: startedAt, durationMs: 0, logs: [] }
-
-      const retry = withRetry<TOut>(this.cfg.maxRetries, this.cfg.retryBackoffMs, this.emit)
-
+      const result: TaskResult<TOut> = {
+        id: t.id,
+        status: 'success',
+        startedAt: Date.now(),
+        endedAt: 0,
+        durationMs: 0
+      }
+      
+      this.emit({ type: 'task:start', payload: { id: t.id }, ts: result.startedAt })
+      
       try {
+        // Acquire resource
         const release = await this.pool.acquire('default', 1)
         try {
           const out = await retry(async () => {
@@ -359,13 +310,13 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
         this.emit({ type: 'task:finish', payload: { id: t.id, status: result.status }, ts: result.endedAt })
       }
     }
-
+    
     // Progress ticker
     const ticker = setInterval(() => {
       const done = Array.from(this.results.values()).length
       this.emit({ type: 'log', payload: { scope: 'progress', done, total: tasks.length }, ts: Date.now() })
     }, this.cfg.progressIntervalMs)
-
+    
     try {
       // Loop until all processed
       while (pending.size) {
@@ -376,6 +327,7 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
             if ((t.requires || []).some((d) => !completed.has(d))) continue
           }
         }
+        
         await Promise.all(ready.map(async (t) => {
           pending.delete(t.id)
           await runOne(t)
@@ -386,7 +338,7 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
       clearInterval(ticker)
       this.emit({ type: 'executor:finish', payload: { total: tasks.length }, ts: Date.now() })
     }
-
+    
     return Array.from(this.results.values())
   }
 }
