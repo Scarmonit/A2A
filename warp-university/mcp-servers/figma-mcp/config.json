@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "figma": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-figma"
+      ],
+      "env": {
+        "FIGMA_PERSONAL_ACCESS_TOKEN": "<your-figma-token>"
+      }
+    }
+  },
+  "capabilities": {
+    "design_access": true,
+    "file_export": true,
+    "component_extraction": true,
+    "style_tokens": true
+  },
+  "settings": {
+    "auto_sync": false,
+    "cache_duration": 3600,
+    "export_format": "svg"
+  }
+}
