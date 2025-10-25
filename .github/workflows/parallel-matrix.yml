@@ -1,17 +1,37 @@
 name: Parallel Matrix
-on: [workflow_dispatch]
+on: [workflow_dispatch, push, pull_request]
+
 jobs:
   run-matrix:
+    name: ${{ matrix.task }} (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 10
       matrix:
-        task: [lint, unit, e2e]
-        node: [18, 20]
+        task: [lint, unit, e2e, integration]
+        node: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm ci
-      - run: npm run ${{ matrix.task }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ${{ matrix.task }}
+        run: npm run ${{ matrix.task }}
+      
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.task }}-node${{ matrix.node }}
+          path: |
+            test-results/
+            coverage/
+            *.log
+          retention-days: 7

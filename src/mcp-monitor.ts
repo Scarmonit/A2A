@@ -4,7 +4,7 @@
  * Tracks MCP server calls, detects anomalies, and provides security monitoring
  */
 
-import { analyticsEngine, AnalyticsInsight } from './analytics-engine';
+import { analyticsEngine, AnalyticsInsight } from './analytics-engine.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'mcp-monitor' });
@@ -48,7 +48,7 @@ export class MCPServerMonitor {
    */
   trackServerCall(params: MCPServerCall): void {
     this.serverCallHistory.push(params);
-    
+
     // Trim history if needed
     if (this.serverCallHistory.length > this.MAX_HISTORY) {
       this.serverCallHistory = this.serverCallHistory.slice(-this.MAX_HISTORY);
@@ -73,7 +73,7 @@ export class MCPServerMonitor {
    */
   trackToolCall(params: ToolCallMetrics): void {
     this.toolCallHistory.push(params);
-    
+
     if (this.toolCallHistory.length > this.MAX_HISTORY) {
       this.toolCallHistory = this.toolCallHistory.slice(-this.MAX_HISTORY);
     }
@@ -96,7 +96,7 @@ export class MCPServerMonitor {
    */
   trackResourceAccess(params: ResourceAccess): void {
     this.resourceAccessHistory.push(params);
-    
+
     if (this.resourceAccessHistory.length > this.MAX_HISTORY) {
       this.resourceAccessHistory = this.resourceAccessHistory.slice(-this.MAX_HISTORY);
     }
@@ -133,8 +133,13 @@ export class MCPServerMonitor {
           severity: 'warning',
           title: 'High Frequency Tool Calls',
           description: `Agent ${agentId} made ${count} tool calls in 5 minutes`,
-          recommendation: 'Review agent behavior for potential issues',
-          timestamp: new Date()
+          data: {
+            agentId,
+            count,
+            timeWindow: '5m'
+          },
+          confidence: 0.85,
+          recommendations: ['Review agent behavior for potential issues']
         });
       }
     });
@@ -150,8 +155,13 @@ export class MCPServerMonitor {
         severity: 'critical',
         title: 'High Tool Call Error Rate',
         description: `${(errorRate * 100).toFixed(1)}% of tool calls failing`,
-        recommendation: 'Investigate tool integrations and error logs',
-        timestamp: new Date()
+        data: {
+          errorRate,
+          totalCalls,
+          failedCalls
+        },
+        confidence: 0.92,
+        recommendations: ['Investigate tool integrations and error logs']
       });
     }
 
@@ -217,7 +227,7 @@ export class MCPServerMonitor {
     this.serverCallHistory = this.serverCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.toolCallHistory = this.toolCallHistory.filter(c => c.timestamp.getTime() > timestamp);
     this.resourceAccessHistory = this.resourceAccessHistory.filter(r => r.timestamp.getTime() > timestamp);
-    
+
     logger.info({ olderThan }, 'Cleared old monitoring history');
   }
 }

@@ -11,7 +11,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src/agents/pyt
 
 # Now we can import
 import pytest
-import greenlet
+
+# Skip the entire module when the optional greenlet dependency is unavailable.
+# pytest.importorskip returns the imported module when it can be resolved, which
+# lets the rest of the tests use the package without additional guards.
+greenlet = pytest.importorskip(
+    "greenlet",
+    reason="greenlet package is not installed; skipping greenlet agent tests",
+)
+
 from greenlet_a2a_agent import GreenletA2AAgent, EchoAgent
 from greenlet_coordinator import GreenletCoordinator
 

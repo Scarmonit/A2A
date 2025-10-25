@@ -5,7 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "npm run agent:continuous",
+    "startCommand": "npm run build && npm run start",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   },
@@ -14,13 +14,13 @@
       "variables": {
         "NODE_ENV": "production",
         "PORT": "8787",
-        "ENABLE_STREAMING": "true",
+        "ENABLE_STREAMING": "false",
         "STREAM_PORT": "8787",
         "STREAM_HOST": "0.0.0.0",
         "MAX_CONCURRENCY": "100",
         "MAX_QUEUE_SIZE": "50000",
         "LOG_LEVEL": "info",
-        "METRICS_PORT": "8787"
+        "METRICS_PORT": "$PORT"
       }
     }
   }
