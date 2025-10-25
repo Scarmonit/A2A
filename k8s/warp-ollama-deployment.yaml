@@ -1,0 +1,200 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: warp-ollama
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models-pvc
+  namespace: warp-ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: warp-ollama-config
+  namespace: warp-ollama
+data:
+  OLLAMA_HOST: "0.0.0.0:11434"
+  OLLAMA_MODELS: "/models"
+  OLLAMA_NUM_PARALLEL: "4"
+  OLLAMA_MAX_LOADED_MODELS: "2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warp-ollama-deployment
+  namespace: warp-ollama
+  labels:
+    app: warp-ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: warp-ollama
+  template:
+    metadata:
+      labels:
+        app: warp-ollama
+    spec:
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: warp-ollama-config
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2"
+          limits:
+            memory: "16Gi"
+            cpu: "4"
+            nvidia.com/gpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /api/version
+            port: 11434
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/version
+            port: 11434
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /api/version
+            port: 11434
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+      - name: warp
+        image: cloudflare/cloudflared:latest
+        command: ["cloudflared", "tunnel", "--no-autoupdate"]
+        args:
+        - "--url"
+        - "http://localhost:11434"
+        - "--metrics"
+        - "0.0.0.0:2000"
+        env:
+        - name: TUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: warp-tunnel-secret
+              key: token
+              optional: true
+        ports:
+        - containerPort: 2000
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 2000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 2000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: ollama-models-pvc
+      - name: ollama-data
+        emptyDir: {}
+      nodeSelector:
+        accelerator: nvidia-gpu
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: warp-ollama-service
+  namespace: warp-ollama
+  labels:
+    app: warp-ollama
+spec:
+  type: ClusterIP
+  selector:
+    app: warp-ollama
+  ports:
+  - name: ollama-http
+    port: 11434
+    targetPort: 11434
+    protocol: TCP
+  - name: warp-metrics
+    port: 2000
+    targetPort: 2000
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: warp-ollama-loadbalancer
+  namespace: warp-ollama
+  labels:
+    app: warp-ollama
+spec:
+  type: LoadBalancer
+  selector:
+    app: warp-ollama
+  ports:
+  - name: ollama-http
+    port: 80
+    targetPort: 11434
+    protocol: TCP
+  sessionAffinity: ClientIP
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: warp-tunnel-secret
+  namespace: warp-ollama
+type: Opaque
+stringData:
+  token: "YOUR_CLOUDFLARE_TUNNEL_TOKEN_HERE"
