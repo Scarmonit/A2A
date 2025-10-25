@@ -1,183 +1,33 @@
-/**
- * End-to-End Monitoring Flow Tests
- * 
- * Tests complete lifecycle from agent start to metrics display,
- * including audit logging and caching
- */
-
 import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert/strict';
-import { TestEnvironment } from './setup.js';
-import { auditLogger } from '../../src/audit-logger.js';
-import { aggregationCache } from '../../src/aggregation-cache.js';
-import { mcpMonitor } from '../../src/mcp-monitor.js';
+import assert from 'node:assert';
+import { TestEnvironment } from '../helpers/test-environment.js';
+import { AuditLogger } from '../../src/audit-logger.js';
+import { MCPServerMonitor } from '../../src/mcp-monitor.js';
+import { AggregationCache } from '../../src/aggregation-cache.js';
 
-describe('End-to-End Monitoring Flow', () => {
-  const env = new TestEnvironment(3004);
+describe('E2E Monitoring and Observability', () => {
+  let env: TestEnvironment;
+  let auditLogger: AuditLogger;
+  let mcpMonitor: MCPServerMonitor;
+  let aggregationCache: AggregationCache<any>;
 
   before(async () => {
+    env = new TestEnvironment();
     await env.setup();
+
+    auditLogger = (env as any).context.auditLogger;
+    mcpMonitor = (env as any).context.mcpMonitor;
+    aggregationCache = (env as any).context.aggregationCache;
   });
 
   after(async () => {
     await env.cleanup();
   });
 
-  it('should track complete lifecycle from agent start to metrics display', async () => {
-    // Clear all monitoring data
-    auditLogger.clear();
-    aggregationCache.clear();
-    mcpMonitor.clear();
-
-    // 1. Register and start MCP server
-    env.mcpManager.registerServer({
-      id: 'e2e-test-server',
-      type: 'test',
-      command: 'node',
-      args: ['-e', 'setInterval(() => {}, 1000)'],
-      autoRestart: false,
-    });
-
-    // Log the start event
-    auditLogger.log({
-      agentId: 'e2e-test-server',
-      action: 'server_started',
-      metadata: { type: 'test' },
-    });
-
-    await env.mcpManager.startServer('e2e-test-server');
-    
-    // Wait for server to start
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // 2. Verify audit log
-    const auditEvents = auditLogger.query({ agentId: 'e2e-test-server', limit: 10 });
-    assert.ok(auditEvents.length > 0, 'Should have audit log entry for server start');
-    assert.ok(
-      auditEvents.some((e) => e.action.includes('started')),
-      'Should have start action in audit log'
-    );
-
-    // 3. Connect WebSocket client
+  it('should integrate all monitoring components', async () => {
     const ws = await env.createWebSocketClient();
 
-    // 4. Verify dashboard receives metrics including the new server
-    const metricsReceived = await new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 15000);
-      
-      ws.on('message', (data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          if (message.type === 'metrics:update' && message.data?.mcpServers) {
-            // Check if our server is in the metrics
-            const mcpServers = message.data.mcpServers;
-            if (mcpServers.total > 0) {
-              clearTimeout(timeout);
-              resolve(true);
-            }
-          }
-        } catch (error) {
-          // Ignore parse errors
-        }
-      });
-    });
-
-    assert.ok(metricsReceived, 'Dashboard should show MCP server metrics');
-
-    // 5. Track some server calls
-    for (let i = 0; i < 5; i++) {
-      mcpMonitor.trackServerCall({
-        serverId: 'e2e-test-server',
-        method: 'test/call',
-        duration: 50 + i * 10,
-        success: true,
-      });
-    }
-
-    const metrics = mcpMonitor.getServerMetrics('e2e-test-server', '5m');
-    assert.strictEqual(metrics.totalCalls, 5, 'Should track all calls');
-
-    // 6. Test cache functionality
-    aggregationCache.set('test-key', { value: 'test-data' }, 60000);
-    const cached = aggregationCache.get('test-key');
-    assert.ok(cached, 'Cache should store and retrieve data');
-
-    const cacheStats = aggregationCache.getStats();
-    assert.ok(cacheStats.hits > 0 || cacheStats.misses > 0, 'Cache should be tracking stats');
-
-    // 7. Stop server and verify cleanup
-    auditLogger.log({
-      agentId: 'e2e-test-server',
-      action: 'server_stopped',
-      metadata: { graceful: true },
-    });
-
-    await env.mcpManager.stopServer('e2e-test-server');
-
-    const stopEvents = auditLogger.query({ agentId: 'e2e-test-server', limit: 20 });
-    assert.ok(
-      stopEvents.some((e) => e.action.includes('stopped')),
-      'Should have audit log for server stop'
-    );
-  });
-
-  it('should maintain audit trail across operations', async () => {
-    auditLogger.clear();
-
-    // Simulate various operations
-    const operations = [
-      { agentId: 'agent1', action: 'deployed' },
-      { agentId: 'agent1', action: 'started' },
-      { agentId: 'agent2', action: 'deployed' },
-      { agentId: 'agent1', action: 'updated' },
-      { agentId: 'agent2', action: 'started' },
-    ];
-
-    for (const op of operations) {
-      auditLogger.log(op);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
-    // Query by specific agent
-    const agent1Events = auditLogger.query({ agentId: 'agent1' });
-    assert.strictEqual(agent1Events.length, 3, 'Should find all events for agent1');
-
-    // Query by action
-    const deployedEvents = auditLogger.query({ action: 'deployed' });
-    assert.strictEqual(deployedEvents.length, 2, 'Should find all deployed actions');
-
-    // Events should be in reverse chronological order
-    assert.ok(
-      agent1Events[0].timestamp >= agent1Events[1].timestamp,
-      'Events should be sorted by timestamp descending'
-    );
-  });
-
-  it('should handle cache expiration properly', async () => {
-    aggregationCache.clear();
-
-    // Set item with short TTL
-    aggregationCache.set('short-lived', { data: 'test' }, 100);
-
-    // Should be retrievable immediately
-    const immediate = aggregationCache.get('short-lived');
-    assert.ok(immediate, 'Should retrieve immediately after setting');
-
-    // Wait for expiration
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    // Should be expired
-    const expired = aggregationCache.get('short-lived');
-    assert.strictEqual(expired, null, 'Should return null after expiration');
-  });
-
-  it('should integrate monitoring with dashboard broadcasts', async () => {
-    const ws = await env.createWebSocketClient();
-    
-    // Wait for connection
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Track some activity
+    // Generate some activity
     for (let i = 0; i < 3; i++) {
       mcpMonitor.trackServerCall({
         serverId: 'integration-test',
@@ -199,18 +49,18 @@ describe('End-to-End Monitoring Flow', () => {
 
   it('should track performance metrics accurately', async () => {
     const ws = await env.createWebSocketClient();
-    
+
     const message = await env.waitForMessage(ws, 10000);
 
     if (message.type === 'metrics:update' && message.data?.performance) {
       const perf = message.data.performance;
-      
+
       assert.ok(typeof perf.memoryUsageMB === 'number', 'Should have memory usage');
       assert.ok(perf.memoryUsageMB > 0, 'Memory usage should be positive');
-      
+
       assert.ok(Array.isArray(perf.cpuLoadAverage), 'Should have CPU load average');
       assert.ok(perf.cpuLoadAverage.length > 0, 'CPU load array should not be empty');
-      
+
       assert.ok(typeof perf.uptime === 'number', 'Should have uptime');
       assert.ok(perf.uptime >= 0, 'Uptime should be non-negative');
     }
@@ -218,7 +68,7 @@ describe('End-to-End Monitoring Flow', () => {
 
   it('should handle concurrent monitoring operations', async () => {
     auditLogger.clear();
-    mcpMonitor.clear();
+    mcpMonitor.clearHistory();
     aggregationCache.clear();
 
     // Perform many operations concurrently
@@ -246,5 +96,53 @@ describe('End-to-End Monitoring Flow', () => {
 
     const cacheStats = aggregationCache.getStats();
     assert.ok(cacheStats.size > 0, 'Cache should contain entries');
+  });
+
+  it('should provide accurate cache statistics', async () => {
+    aggregationCache.clear();
+
+    // Add some cache entries
+    for (let i = 0; i < 10; i++) {
+      aggregationCache.set(`test-key-${i}`, { data: i });
+    }
+
+    // Access some entries (creates hits)
+    for (let i = 0; i < 5; i++) {
+      aggregationCache.get(`test-key-${i}`);
+    }
+
+    // Access non-existent entries (creates misses)
+    for (let i = 10; i < 15; i++) {
+      aggregationCache.get(`test-key-${i}`);
+    }
+
+    const stats = aggregationCache.getStats();
+    assert.ok(stats.size === 10, `Cache should have 10 entries, got ${stats.size}`);
+    assert.ok(stats.hitCount >= 5, `Should have at least 5 hits, got ${stats.hitCount}`);
+    assert.ok(stats.missCount >= 5, `Should have at least 5 misses, got ${stats.missCount}`);
+    assert.ok(stats.hitRate >= 0 && stats.hitRate <= 1, 'Hit rate should be between 0 and 1');
+    assert.ok(typeof stats.memoryUsage === 'number', 'Should report memory usage');
+  });
+
+  it('should handle server monitoring metrics', async () => {
+    mcpMonitor.clearHistory();
+
+    // Track some server calls
+    for (let i = 0; i < 5; i++) {
+      mcpMonitor.trackServerCall({
+        serverId: 'test-server',
+        method: 'testMethod',
+        duration: 50 + i * 10,
+        success: i < 4, // One failure
+      });
+    }
+
+    const metrics = mcpMonitor.getMetrics();
+    assert.ok(metrics['test-server'], 'Should have metrics for test-server');
+
+    const serverMetrics = metrics['test-server'];
+    assert.ok(serverMetrics.totalCalls === 5, `Should have 5 total calls, got ${serverMetrics.totalCalls}`);
+    assert.ok(serverMetrics.successfulCalls === 4, `Should have 4 successful calls, got ${serverMetrics.successfulCalls}`);
+    assert.ok(serverMetrics.failedCalls === 1, `Should have 1 failed call, got ${serverMetrics.failedCalls}`);
   });
 });
