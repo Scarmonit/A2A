@@ -1,4 +1,4 @@
-import os from 'os';
+import * as os from 'os';
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
 
@@ -100,6 +100,9 @@ const MODEL_PROFILES: OllamaModelProfile[] = [
   { name: 'mistral:7b-instruct-q4_K_M', minVramMB: 4800, family: 'mistral', maxContext: 8192 },
   { name: 'qwen2.5:7b-instruct-q6_K', minVramMB: 6800, family: 'qwen', maxContext: 8192 },
   { name: 'qwen2.5:7b-instruct-q4_K_M', minVramMB: 5000, family: 'qwen', maxContext: 8192 },
+  // Enterprise-scale cloud models (requires Warp cloud integration or remote Ollama deployment)
+  { name: 'qwen3:671b-cloud', minVramMB: 320000, family: 'qwen', maxContext: 32768 }, // 671B reasoning model
+  { name: 'qwen3-coder:480b-cloud', minVramMB: 240000, family: 'qwen', maxContext: 32768 }, // 480B coding model
 ];
 
 function log(logger: ManagerOptions['logger'] | undefined, msg: string) {
@@ -205,7 +208,7 @@ export class WarpOllamaManager {
 
   buildRequest(messages: OpenAIChatMessage[], overrides: Partial<BehaviorPreset> = {}, model?: string): OpenAIChatCompletionRequest {
     const behaviorKey = (this.options.behavior || 'general').toString();
-    const preset = defaultBehaviorPresets[behaviorKey as keyof typeof defaultBehaviorPresets] || defaultBehaviorPresets.general;
+    const preset: BehaviorPreset = defaultBehaviorPresets[behaviorKey as keyof typeof defaultBehaviorPresets] || defaultBehaviorPresets.general;
     const sys = preset.systemPrompt ? [{ role: 'system', content: preset.systemPrompt } as OpenAIChatMessage] : [];
     const mergedStop = overrides.stop ?? preset.stop;
 
@@ -216,7 +219,7 @@ export class WarpOllamaManager {
       top_p: overrides.topP ?? preset.topP ?? 0.9,
       max_tokens: overrides.maxTokens ?? preset.maxTokens ?? 1024,
       stream: false,
-      stop: mergedStop,
+      ...(mergedStop ? { stop: mergedStop } : {}),
     };
   }
 
@@ -284,6 +287,231 @@ export class WarpOllamaManager {
     const res = await this.chat(req);
     const content = res.choices?.[0]?.message?.content ?? '';
     return content;
+  }
+
+  /**
+   * OpenAI-compatible chat completion method.
+   * Alias for the `chat` method to match OpenAI SDK conventions.
+   *
+   * @param request - OpenAI chat completion request
+   * @returns OpenAI chat completion response
+   *
+   * @example
+   * ```typescript
+   * const result = await manager.generateChatCompletion({
+   *   model: 'qwen3-coder:480b-cloud',
+   *   messages: [{ role: 'user', content: 'Create enterprise microservices architecture' }]
+   * });
+   * console.log(result.choices[0].message.content);
+   * ```
+   */
+  async generateChatCompletion(request: OpenAIChatCompletionRequest): Promise<OpenAIChatCompletionResponse> {
+    return this.chat(request);
+  }
+
+  /**
+   * Integrates two A2A agents for collaborative task execution using Warp + Ollama.
+   * This method orchestrates a multi-agent conversation where agents work together
+   * to solve complex problems that benefit from specialized reasoning and coding models.
+   *
+   * @param sourceAgentId - The requesting agent identifier (e.g., 'enterprise-agent')
+   * @param targetAgentId - The responding agent identifier (e.g., 'research-assistant')
+   * @param task - The collaborative task description
+   * @param options - Optional configuration for the integration
+   * @returns A2A integration result with both agents' contributions
+   *
+   * @example
+   * ```typescript
+   * const result = await warpOllamaManager.integrateWithA2A(
+   *   'enterprise-agent',
+   *   'research-assistant',
+   *   'Design a distributed AI system for 10M+ users'
+   * );
+   * console.log(result.finalArchitecture);
+   * ```
+   */
+  async integrateWithA2A(
+    sourceAgentId: string,
+    targetAgentId: string,
+    task: string,
+    options: {
+      reasoningModel?: string;
+      codingModel?: string;
+      maxRounds?: number;
+      temperature?: number;
+    } = {}
+  ): Promise<{
+    success: boolean;
+    task: string;
+    sourceAgent: string;
+    targetAgent: string;
+    conversation: Array<{ agent: string; model: string; content: string; timestamp: number }>;
+    finalOutput: string;
+    metadata: {
+      totalRounds: number;
+      modelsUsed: string[];
+      executionTimeMs: number;
+    };
+  }> {
+    const startTime = Date.now();
+    const reasoningModel = options.reasoningModel || 'qwen3:671b-cloud';
+    const codingModel = options.codingModel || 'qwen3-coder:480b-cloud';
+    const maxRounds = options.maxRounds || 3;
+    const temperature = options.temperature ?? 0.2;
+
+    log(this.options.logger, `Starting A2A integration: ${sourceAgentId} -> ${targetAgentId}`);
+    log(this.options.logger, `Task: ${task}`);
+    log(this.options.logger, `Using reasoning model: ${reasoningModel}, coding model: ${codingModel}`);
+
+    const conversation: Array<{ agent: string; model: string; content: string; timestamp: number }> = [];
+    const modelsUsed = new Set<string>();
+
+    try {
+      // Round 1: Source agent (enterprise-agent) analyzes requirements using reasoning model
+      log(this.options.logger, `Round 1: ${sourceAgentId} analyzing requirements...`);
+      const analysisRequest: OpenAIChatCompletionRequest = {
+        model: reasoningModel,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ${sourceAgentId}, an enterprise AI agent specializing in complex system design and requirements analysis. Analyze the task thoroughly and break it down into key components.`
+          },
+          {
+            role: 'user',
+            content: `Task: ${task}\n\nProvide a comprehensive analysis including:\n1. Key requirements\n2. Technical challenges\n3. Scalability considerations\n4. Recommended architecture patterns`
+          }
+        ],
+        temperature,
+        max_tokens: 4096
+      };
+
+      const analysisResponse = await this.chat(analysisRequest);
+      const analysisContent = analysisResponse.choices[0]?.message?.content || '';
+      modelsUsed.add(reasoningModel);
+
+      conversation.push({
+        agent: sourceAgentId,
+        model: reasoningModel,
+        content: analysisContent,
+        timestamp: Date.now()
+      });
+
+      log(this.options.logger, `Round 1 complete: ${analysisContent.length} chars generated`);
+
+      // Round 2: Target agent (research-assistant) provides detailed architecture using reasoning model
+      log(this.options.logger, `Round 2: ${targetAgentId} designing architecture...`);
+      const architectureRequest: OpenAIChatCompletionRequest = {
+        model: reasoningModel,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ${targetAgentId}, a research-focused AI agent with expertise in distributed systems, cloud architecture, and scalability. Design a comprehensive architecture based on the analysis provided.`
+          },
+          {
+            role: 'user',
+            content: `Based on this analysis:\n\n${analysisContent}\n\nDesign a detailed distributed AI system architecture that can handle 10M+ users. Include:\n1. System components and their responsibilities\n2. Data flow and communication patterns\n3. Scalability strategy\n4. Technology stack recommendations`
+          }
+        ],
+        temperature,
+        max_tokens: 4096
+      };
+
+      const architectureResponse = await this.chat(architectureRequest);
+      const architectureContent = architectureResponse.choices[0]?.message?.content || '';
+
+      conversation.push({
+        agent: targetAgentId,
+        model: reasoningModel,
+        content: architectureContent,
+        timestamp: Date.now()
+      });
+
+      log(this.options.logger, `Round 2 complete: ${architectureContent.length} chars generated`);
+
+      // Round 3: Use coding model to generate implementation code and setup scripts
+      log(this.options.logger, `Round 3: Generating implementation code with ${codingModel}...`);
+      const implementationRequest: OpenAIChatCompletionRequest = {
+        model: codingModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert software architect and senior engineer. Generate production-ready, well-documented code for enterprise microservices architectures.'
+          },
+          {
+            role: 'user',
+            content: `Based on this architecture:\n\n${architectureContent}\n\nGenerate:\n1. Core microservice structure (TypeScript/Node.js)\n2. API gateway configuration\n3. Database schema\n4. Docker and Kubernetes deployment manifests\n5. Monitoring and observability setup\n\nProvide clean, typed, production-ready code with comments.`
+          }
+        ],
+        temperature: 0.1, // Lower temperature for code generation
+        max_tokens: 8192
+      };
+
+      const implementationResponse = await this.chat(implementationRequest);
+      const implementationContent = implementationResponse.choices[0]?.message?.content || '';
+      modelsUsed.add(codingModel);
+
+      conversation.push({
+        agent: `${sourceAgentId}+${targetAgentId}`,
+        model: codingModel,
+        content: implementationContent,
+        timestamp: Date.now()
+      });
+
+      log(this.options.logger, `Round 3 complete: ${implementationContent.length} chars of code generated`);
+
+      // Compile final output
+      const finalOutput = `# Distributed AI System for 10M+ Users - A2A Collaborative Design
+
+## Requirements Analysis (${sourceAgentId})
+${analysisContent}
+
+## Architecture Design (${targetAgentId})
+${architectureContent}
+
+## Implementation (Collaborative)
+${implementationContent}
+
+---
+*Generated by A2A integration with Warp + Ollama*
+*Models: ${Array.from(modelsUsed).join(', ')}*
+*Execution time: ${Date.now() - startTime}ms*`;
+
+      const executionTimeMs = Date.now() - startTime;
+
+      log(this.options.logger, `A2A integration complete in ${executionTimeMs}ms`);
+
+      return {
+        success: true,
+        task,
+        sourceAgent: sourceAgentId,
+        targetAgent: targetAgentId,
+        conversation,
+        finalOutput,
+        metadata: {
+          totalRounds: conversation.length,
+          modelsUsed: Array.from(modelsUsed),
+          executionTimeMs
+        }
+      };
+
+    } catch (error) {
+      const executionTimeMs = Date.now() - startTime;
+      log(this.options.logger, `A2A integration failed: ${error}`);
+
+      return {
+        success: false,
+        task,
+        sourceAgent: sourceAgentId,
+        targetAgent: targetAgentId,
+        conversation,
+        finalOutput: `Error during A2A integration: ${error instanceof Error ? error.message : String(error)}`,
+        metadata: {
+          totalRounds: conversation.length,
+          modelsUsed: Array.from(modelsUsed),
+          executionTimeMs
+        }
+      };
+    }
   }
 
   private execOnce(cmd: string, args: string[]) {
