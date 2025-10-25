@@ -1,4 +1,5 @@
 # A2A MCP Server
+
 [![CI Status](https://github.com/Scarmonit/A2A/actions/workflows/ci.yml/badge.svg)](https://github.com/Scarmonit/A2A/actions/workflows/ci.yml)
 [![Security Scan](https://github.com/Scarmonit/A2A/actions/workflows/security.yml/badge.svg)](https://github.com/Scarmonit/A2A/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -75,155 +76,130 @@ const results = await executeParallel(commands);
 ```typescript
 import { executeNpmScriptsParallel } from './src/parallel-executor';
 
-const results = await executeNpmScriptsParallel(['build', 'test', 'lint']);
+const scripts = ['build', 'test', 'lint'];
+const results = await executeNpmScriptsParallel(scripts);
 ```
+
+## OpenSSH Integration
+
+The A2A server provides comprehensive OpenSSH integration for secure remote Windows Server automation and management. This enables A2A agents to execute commands, manage services, and automate tasks on remote Windows systems through secure SSH connections.
+
+### Features
+
+- **SSH Connection Management**: Establish and maintain secure SSH connections to remote Windows Servers
+- **Remote Windows Server Automation**: Execute PowerShell scripts, batch commands, and system administration tasks remotely
+- **Key-Based Authentication**: Support for SSH key pairs (RSA, ECDSA, Ed25519) for passwordless authentication
+- **Secure Command Execution**: Execute commands in isolated sessions with full stdout/stderr capture
+- **Session Multiplexing**: Reuse SSH connections for multiple commands to improve performance
+- **Integration with A2A Agents**: Seamlessly integrate SSH operations into agent workflows and automation pipelines
+
+### Configuration
+
+Configure OpenSSH connections in your A2A agent configuration:
+
+```typescript
+import { SSHExecutor } from './src/ssh-executor';
+
+const sshConfig = {
+  host: 'windows-server.example.com',
+  port: 22,
+  username: 'administrator',
+  privateKeyPath: '~/.ssh/id_rsa',
+  // Optional: password authentication
+  // password: 'your-password'
+};
+
+const executor = new SSHExecutor(sshConfig);
+```
+
+### Usage Examples
+
+#### Example 1: Execute PowerShell Commands Remotely
+
+```typescript
+import { SSHExecutor } from './src/ssh-executor';
+
+const executor = new SSHExecutor(sshConfig);
+
+// Execute a PowerShell command
+const result = await executor.execute('powershell -Command "Get-Service | Where-Object {$_.Status -eq \'Running\'}"');
+console.log(result.stdout);
+```
+
+#### Example 2: Parallel Remote Execution
+
+```typescript
+import { SSHExecutor, executeSSHParallel } from './src/ssh-executor';
+
+const servers = [
+  { host: 'server1.example.com', ...commonConfig },
+  { host: 'server2.example.com', ...commonConfig },
+  { host: 'server3.example.com', ...commonConfig }
+];
+
+const command = 'powershell -Command "Get-Process"';
+const results = await executeSSHParallel(servers, command);
+```
+
+#### Example 3: A2A Agent Integration
+
+```typescript
+import { Agent } from './src/agent';
+import { SSHExecutor } from './src/ssh-executor';
+
+class WindowsManagementAgent extends Agent {
+  async deployApplication(serverList: string[]) {
+    const deployCommands = serverList.map(server => ({
+      host: server,
+      command: 'powershell -File C:\\Deploy\\install-app.ps1'
+    }));
+    
+    return await this.executeSSHParallel(deployCommands);
+  }
+}
+```
+
+### Security Best Practices
+
+- Use key-based authentication instead of passwords
+- Store private keys securely with appropriate file permissions (600)
+- Rotate SSH keys regularly
+- Use jump hosts (bastion servers) for additional security layers
+- Enable SSH connection logging and monitoring
+- Implement command whitelisting for production environments
+
+### Documentation
+
+- **[Complete OpenSSH Integration Guide](./docs/OPENSSH_INTEGRATION.md)** - Full setup and configuration
+- **[SSH Security Best Practices](./docs/SSH_SECURITY.md)** - Security guidelines and hardening
+- **[Windows Server Automation Examples](./examples/windows-ssh-automation/)** - Real-world automation scenarios
+- **[Troubleshooting SSH Connections](./docs/SSH_TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Warp University Integration
 
-### Overview of Warp Workflows
+Integrate A2A with Warp University for enhanced terminal automation and learning.
 
-The A2A MCP Server now integrates seamlessly with Warp University workflows, providing production-ready automation patterns and agent orchestration capabilities. This integration enables:
+### Features
 
-- **Multi-Agent Workflows**: Coordinate multiple AI agents working on complex tasks simultaneously
-- **MCP Server Integration**: Direct access to Warp's MCP servers for enhanced context and tool access
-- **Production Patterns**: Battle-tested workflows for common development and operations tasks
-- **Extensible Templates**: Pre-built workflow templates that can be customized for your needs
+- **Warp Command Blocks**: Execute commands in isolated Warp blocks
+- **Terminal Session Management**: Manage multiple terminal sessions
+- **Command History Integration**: Access and replay command history
+- **AI-Powered Suggestions**: Get intelligent command suggestions
 
-### Quick Start Guide
+### Setup
 
-Get started with Warp + A2A in minutes:
+1. Install Warp terminal
+2. Configure A2A integration in Warp settings
+3. Enable agent access to Warp features
 
-#### 1. Install Warp CLI
-
-```bash
-# Clone the Warp University repository
-git clone https://github.com/your-org/warp-university.git
-cd warp-university
-
-# Install dependencies
-npm install
-```
-
-#### 2. Configure A2A Integration
-
-```bash
-# Link Warp with your A2A server
-export A2A_SERVER_URL="ws://localhost:3000"
-export A2A_API_KEY="your-api-key"
-
-# Initialize Warp configuration
-warp init --with-a2a
-```
-
-#### 3. Run Your First Warp Agent with A2A
-
-```bash
-# Execute a simple workflow
-warp run --workflow code-review --parallel
-
-# Or use the A2A parallel executor
-node -e "require('./src/parallel-executor').executeWarpWorkflow('code-review')"
-```
-
-### Documentation Links
-
-Explore the complete Warp University documentation:
-
-- **[Warp Getting Started](./warp-university/README.md)** - Introduction and setup guide
-- **[Workflow Templates](./warp-university/workflows/README.md)** - Pre-built workflow templates
-- **[MCP Server Configuration](./warp-university/docs/mcp-servers.md)** - Configuring MCP servers
-- **[Agent Orchestration Guide](./warp-university/docs/agent-orchestration.md)** - Multi-agent coordination
-- **[Production Deployment](./warp-university/docs/production-deployment.md)** - Deploy Warp workflows at scale
-- **[API Reference](./warp-university/docs/api-reference.md)** - Complete API documentation
-- **[Troubleshooting Guide](./warp-university/docs/troubleshooting.md)** - Common issues and solutions
-
-### Example Workflows
-
-#### Example 1: Code Review with Multiple Agents
+### Usage Example
 
 ```typescript
-import { WarpWorkflowExecutor } from './warp-university/src/executor';
-import { executeParallel } from './src/parallel-executor';
+import { WarpIntegration } from './src/warp-integration';
 
-const workflow = new WarpWorkflowExecutor({
-  name: 'code-review',
-  agents: ['linter', 'security-scanner', 'test-runner'],
-  mcpServers: ['github', 'sonarqube'],
-  parallel: true
-});
-
-// Execute with A2A parallel execution
-const results = await workflow.execute({
-  repository: 'Scarmonit/A2A',
-  branch: 'feature/warp-integration'
-});
-
-console.log(`Review completed: ${results.summary}`);
+const warp = new WarpIntegration();
+await warp.executeBlock('npm run build && npm run test');
 ```
-
-#### Example 2: Automated Deployment Pipeline
-
-```typescript
-import { WarpWorkflowExecutor } from './warp-university/src/executor';
-
-const pipeline = new WarpWorkflowExecutor({
-  name: 'deploy-pipeline',
-  stages: [
-    { name: 'build', parallel: ['compile', 'test', 'lint'] },
-    { name: 'security', parallel: ['scan-dependencies', 'scan-containers'] },
-    { name: 'deploy', sequential: ['staging', 'production'] }
-  ],
-  mcpServers: ['docker', 'kubernetes', 'slack']
-});
-
-await pipeline.execute();
-```
-
-#### Example 3: Real-Time Monitoring Agent
-
-```typescript
-import { WarpAgent } from './warp-university/src/agent';
-
-const monitor = new WarpAgent({
-  name: 'system-monitor',
-  mcpServers: ['prometheus', 'grafana'],
-  triggers: [
-    { type: 'metric', threshold: 'cpu > 80%' },
-    { type: 'metric', threshold: 'memory > 90%' }
-  ],
-  actions: [
-    'scale-up',
-    'alert-ops-team',
-    'capture-diagnostics'
-  ]
-});
-
-await monitor.start();
-```
-
-### Benefits of Integration
-
-#### 🚀 Parallel Execution
-
-- **Concurrent Agent Operations**: Run multiple Warp agents simultaneously using A2A's parallel executor
-- **Promise.all Integration**: Seamless integration with JavaScript's native concurrency primitives
-- **Resource Optimization**: Efficient resource utilization with configurable concurrency limits
-- **Performance Gains**: Reduce workflow execution time by up to 80% for parallelizable tasks
-
-#### 🔌 MCP Server Ecosystem
-
-- **Rich Context Access**: Connect to 50+ MCP servers for enhanced agent capabilities
-- **Tool Integration**: Leverage MCP tools for file systems, databases, APIs, and more
-- **Standardized Interface**: Use consistent MCP protocol across all integrations
-- **Custom Servers**: Build and integrate your own MCP servers seamlessly
-
-#### 💪 Production-Ready Workflows
-
-- **Battle-Tested Patterns**: Use proven workflow patterns from real-world deployments
-- **Error Handling**: Comprehensive error handling and retry mechanisms
-- **Monitoring & Observability**: Built-in metrics, logging, and tracing
-- **Scalability**: Horizontal scaling support with Kubernetes and Docker
-- **High Availability**: Auto-recovery and health checks ensure uptime
 
 #### 🔧 Developer Experience
 
