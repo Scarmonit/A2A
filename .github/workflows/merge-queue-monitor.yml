@@ -1,0 +1,340 @@
+name: Merge Queue Monitor
+
+on:
+  pull_request:
+    types: [opened, closed, reopened, synchronize]
+  merge_group:
+  schedule:
+    # Run every hour to collect metrics
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  collect-metrics:
+    name: Collect Merge Queue Metrics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Collect PR metrics
+        id: metrics
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Fetch recent PRs
+            const { data: prs } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'all',
+              per_page: 100,
+              sort: 'updated',
+              direction: 'desc'
+            });
+
+            // Calculate metrics
+            const metrics = {
+              total_prs: prs.length,
+              open_prs: prs.filter(pr => pr.state === 'open').length,
+              closed_prs: prs.filter(pr => pr.state === 'closed' && !pr.merged_at).length,
+              merged_prs: prs.filter(pr => pr.merged_at).length,
+              draft_prs: prs.filter(pr => pr.draft).length,
+
+              // Time to merge metrics
+              merge_times: [],
+              avg_time_to_merge: 0,
+              median_time_to_merge: 0,
+
+              // Queue metrics
+              prs_in_queue: 0,
+              avg_queue_time: 0,
+
+              // Labels
+              blocked_prs: prs.filter(pr =>
+                pr.labels.some(l => l.name === 'blocked')
+              ).length,
+              needs_review: prs.filter(pr =>
+                pr.labels.some(l => l.name === 'needs:review')
+              ).length,
+
+              // Today's stats
+              today_opened: 0,
+              today_merged: 0,
+              today_closed: 0
+            };
+
+            // Calculate time to merge for merged PRs
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            prs.forEach(pr => {
+              const createdDate = new Date(pr.created_at);
+              const prDate = new Date(pr.created_at);
+              prDate.setHours(0, 0, 0, 0);
+
+              // Today's activity
+              if (prDate.getTime() === today.getTime()) {
+                metrics.today_opened++;
+              }
+
+              if (pr.merged_at) {
+                const mergedDate = new Date(pr.merged_at);
+                mergedDate.setHours(0, 0, 0, 0);
+
+                if (mergedDate.getTime() === today.getTime()) {
+                  metrics.today_merged++;
+                }
+
+                // Time to merge in hours
+                const timeToMerge = (new Date(pr.merged_at) - createdDate) / (1000 * 60 * 60);
+                metrics.merge_times.push(timeToMerge);
+              } else if (pr.closed_at && !pr.merged_at) {
+                const closedDate = new Date(pr.closed_at);
+                closedDate.setHours(0, 0, 0, 0);
+
+                if (closedDate.getTime() === today.getTime()) {
+                  metrics.today_closed++;
+                }
+              }
+            });
+
+            // Calculate averages
+            if (metrics.merge_times.length > 0) {
+              metrics.avg_time_to_merge = (
+                metrics.merge_times.reduce((a, b) => a + b, 0) / metrics.merge_times.length
+              ).toFixed(2);
+
+              // Calculate median
+              const sorted = metrics.merge_times.sort((a, b) => a - b);
+              const mid = Math.floor(sorted.length / 2);
+              metrics.median_time_to_merge = (
+                sorted.length % 2 === 0
+                  ? (sorted[mid - 1] + sorted[mid]) / 2
+                  : sorted[mid]
+              ).toFixed(2);
+            }
+
+            // PRs in merge queue (ready to merge, all checks passed)
+            for (const pr of prs.filter(p => p.state === 'open')) {
+              try {
+                const { data: checks } = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref: pr.head.sha
+                });
+
+                const allPassed = checks.check_runs.every(
+                  check => check.conclusion === 'success' || check.conclusion === 'skipped'
+                );
+
+                if (allPassed && !pr.draft && !pr.labels.some(l => l.name === 'blocked')) {
+                  metrics.prs_in_queue++;
+                }
+              } catch (e) {
+                // Skip if checks not available
+              }
+            }
+
+            // Store metrics
+            core.setOutput('metrics', JSON.stringify(metrics, null, 2));
+
+            return metrics;
+
+      - name: Generate metrics report
+        run: |
+          cat > merge-queue-metrics.md << 'EOF'
+          # Merge Queue Metrics Report
+
+          **Generated**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Repository**: ${{ github.repository }}
+
+          ## Overview
+
+          EOF
+
+          # Parse metrics from previous step
+          echo '${{ steps.metrics.outputs.metrics }}' | node -e "
+            const metrics = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
+
+            console.log(\`### Current Status\n\`);
+            console.log(\`- **Open PRs**: \${metrics.open_prs}\`);
+            console.log(\`- **PRs in Merge Queue**: \${metrics.prs_in_queue}\`);
+            console.log(\`- **Blocked PRs**: \${metrics.blocked_prs}\`);
+            console.log(\`- **Needs Review**: \${metrics.needs_review}\`);
+            console.log(\`- **Draft PRs**: \${metrics.draft_prs}\n\`);
+
+            console.log(\`### Performance Metrics\n\`);
+            console.log(\`- **Average Time to Merge**: \${metrics.avg_time_to_merge} hours\`);
+            console.log(\`- **Median Time to Merge**: \${metrics.median_time_to_merge} hours\`);
+            console.log(\`- **Total PRs Analyzed**: \${metrics.total_prs}\n\`);
+
+            console.log(\`### Today's Activity\n\`);
+            console.log(\`- **Opened**: \${metrics.today_opened}\`);
+            console.log(\`- **Merged**: \${metrics.today_merged}\`);
+            console.log(\`- **Closed**: \${metrics.today_closed}\n\`);
+
+            console.log(\`### Historical Stats\n\`);
+            console.log(\`- **Total Merged**: \${metrics.merged_prs}\`);
+            console.log(\`- **Total Closed (not merged)**: \${metrics.closed_prs}\`);
+            console.log(\`- **Merge Success Rate**: \${((metrics.merged_prs / (metrics.merged_prs + metrics.closed_prs)) * 100).toFixed(1)}%\n\`);
+
+            // Recommendations
+            console.log(\`## Recommendations\n\`);
+
+            if (metrics.prs_in_queue > 5) {
+              console.log(\`- ⚠️ **High queue count** (\${metrics.prs_in_queue} PRs ready): Consider increasing merge batch size\`);
+            }
+
+            if (parseFloat(metrics.avg_time_to_merge) > 24) {
+              console.log(\`- ⚠️ **Slow merge time** (\${metrics.avg_time_to_merge}h avg): Review approval process\`);
+            }
+
+            if (metrics.blocked_prs > 3) {
+              console.log(\`- ⚠️ **Many blocked PRs** (\${metrics.blocked_prs}): Review and resolve blockers\`);
+            }
+
+            if (metrics.needs_review > 5) {
+              console.log(\`- ⚠️ **Review backlog** (\${metrics.needs_review} PRs): Increase reviewer availability\`);
+            }
+
+            if (metrics.prs_in_queue === 0 && metrics.open_prs > 0) {
+              console.log(\`- ℹ️ Open PRs waiting for checks to pass or reviews\`);
+            }
+
+            if (metrics.prs_in_queue < 3 && parseFloat(metrics.avg_time_to_merge) < 12) {
+              console.log(\`- ✅ Merge queue is healthy and efficient\`);
+            }
+          " >> merge-queue-metrics.md
+
+          cat >> merge-queue-metrics.md << 'EOF'
+
+          ## Merge Queue Configuration
+
+          Current settings from `.trunk/trunk.yaml`:
+          - **Required Statuses**: trunk-check, build, test
+          - **Batch Size**: Adjust based on queue metrics
+
+          ### Optimization Tips
+
+          1. **If queue is backing up**: Increase batch size in trunk.yaml
+          2. **If merge time is slow**: Enable parallel test execution
+          3. **If many blocked PRs**: Review blocking labels and conditions
+          4. **If checks are slow**: Optimize CI workflow caching
+
+          ---
+          *Auto-generated by Merge Queue Monitor*
+          EOF
+
+      - name: Save metrics to artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-queue-metrics-${{ github.run_id }}
+          path: |
+            merge-queue-metrics.md
+          retention-days: 90
+
+      - name: Create or update tracking issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const metrics = JSON.parse('${{ steps.metrics.outputs.metrics }}');
+            const report = fs.readFileSync('merge-queue-metrics.md', 'utf8');
+
+            // Look for existing metrics tracking issue
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'metrics,merge-queue',
+              per_page: 1
+            });
+
+            const body = report + '\n\n---\n\n' +
+              `**Last Updated**: ${new Date().toISOString()}\n` +
+              `**Workflow Run**: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+
+            if (issues.length > 0) {
+              // Update existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body: `## 📊 Metrics Update\n\n${body}`
+              });
+
+              console.log(`Updated metrics in issue #${issues[0].number}`);
+            } else {
+              // Create new tracking issue
+              const newIssue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '📊 Merge Queue Metrics Dashboard',
+                body: body,
+                labels: ['metrics', 'merge-queue', 'automation']
+              });
+
+              console.log(`Created new metrics issue #${newIssue.data.number}`);
+            }
+
+      - name: Alert on queue issues
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const metrics = JSON.parse('${{ steps.metrics.outputs.metrics }}');
+
+            let alerts = [];
+
+            // Check for issues
+            if (metrics.prs_in_queue > 10) {
+              alerts.push('🔴 **CRITICAL**: Merge queue has ' + metrics.prs_in_queue + ' PRs waiting');
+            }
+
+            if (parseFloat(metrics.avg_time_to_merge) > 48) {
+              alerts.push('🟡 **WARNING**: Average merge time is ' + metrics.avg_time_to_merge + ' hours');
+            }
+
+            if (metrics.blocked_prs > 5) {
+              alerts.push('🟡 **WARNING**: ' + metrics.blocked_prs + ' PRs are blocked');
+            }
+
+            // Create alert issue if needed
+            if (alerts.length > 0) {
+              const body = `## 🚨 Merge Queue Alert\n\n` +
+                `The following issues were detected:\n\n` +
+                alerts.map(a => `- ${a}`).join('\n') +
+                `\n\n### Current Metrics\n\n` +
+                `- Open PRs: ${metrics.open_prs}\n` +
+                `- PRs in Queue: ${metrics.prs_in_queue}\n` +
+                `- Avg Time to Merge: ${metrics.avg_time_to_merge}h\n\n` +
+                `Please review and take action to optimize the merge queue.\n\n` +
+                `*Auto-generated alert from Merge Queue Monitor*`;
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🚨 Merge Queue Performance Alert',
+                body: body,
+                labels: ['alert', 'merge-queue', 'needs-attention']
+              });
+
+              console.log('Created alert issue due to queue performance issues');
+            } else {
+              console.log('No alerts needed - merge queue is healthy');
+            }
+        continue-on-error: true
