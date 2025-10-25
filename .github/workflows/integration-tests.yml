@@ -70,3 +70,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: integration-tests
     if: always()
+    
+    steps:
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results
+      
+      - name: Display test summary
+        run: |
+          echo "Integration Test Summary"
+          echo "========================"
+          ls -R test-results/
+          echo "All integration test suites completed"
