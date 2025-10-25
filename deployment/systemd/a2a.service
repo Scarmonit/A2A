@@ -1,0 +1,57 @@
+[Unit]
+Description=A2A MCP Server - Agent-to-Agent Communication Server
+Documentation=https://github.com/your-repo/A2A
+After=network.target
+
+[Service]
+Type=simple
+
+# User and Group (create a dedicated user for security)
+# Run: sudo useradd -r -s /bin/false a2a
+User=a2a
+Group=a2a
+
+# Working directory - CHANGE THIS to your installation path
+WorkingDirectory=/opt/a2a
+
+# Environment file - CHANGE THIS path if needed
+EnvironmentFile=/opt/a2a/.env
+
+# Node.js path - adjust if different
+Environment="NODE_ENV=production"
+Environment="PATH=/usr/bin:/usr/local/bin"
+
+# Start command
+ExecStart=/usr/bin/node --max-old-space-size=2048 --enable-source-maps dist/index.js
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=5min
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/a2a/data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=a2a-mcp
+
+# Graceful shutdown timeout
+TimeoutStopSec=30s
+
+# Kill signal
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
