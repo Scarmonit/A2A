@@ -1,145 +1,236 @@
+// src/mcp-monitor.ts
 /**
- * MCP Monitor - Tracks MCP server calls and detects anomalies
- * 
- * This is a stub implementation for testing purposes.
+ * MCP Server Monitoring and Observability
+ * Tracks MCP server calls, detects anomalies, and provides security monitoring
  */
 
-export interface MCPCall {
+import { analyticsEngine, AnalyticsInsight } from './analytics-engine.js';
+import pino from 'pino';
+
+const logger = pino({ name: 'mcp-monitor' });
+
+export interface MCPServerCall {
   serverId: string;
   method: string;
   duration: number;
   success: boolean;
   errorType?: string;
-  timestamp?: number;
+  timestamp: Date;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
-export interface ServerMetrics {
-  totalCalls: number;
-  successRate: number;
-  avgLatency: number;
-  p95Latency: number;
-  errorRate: number;
+export interface ResourceAccess {
+  resourceType: 'memory' | 'cpu' | 'network' | 'mcp_server';
+  agentId: string;
+  usage: number;
+  timestamp: Date;
 }
 
-export interface Anomaly {
-  type: 'high_error_rate' | 'high_latency' | 'unusual_pattern';
-  severity: 'low' | 'medium' | 'high';
-  description: string;
-  timestamp: number;
+export interface ToolCallMetrics {
+  toolName: string;
+  agentId: string;
+  duration: number;
+  success: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  timestamp: Date;
 }
 
-class MCPMonitor {
-  private calls = new Map<string, MCPCall[]>();
-  private readonly maxStoredCalls = 10000;
+export class MCPServerMonitor {
+  private serverCallHistory: MCPServerCall[] = [];
+  private toolCallHistory: ToolCallMetrics[] = [];
+  private resourceAccessHistory: ResourceAccess[] = [];
+  private readonly MAX_HISTORY = 10000;
 
-  trackServerCall(call: MCPCall): void {
-    const callWithTimestamp = {
-      ...call,
-      timestamp: call.timestamp || Date.now(),
-    };
+  /**
+   * Track an MCP server call with full metrics
+   */
+  trackServerCall(params: MCPServerCall): void {
+    this.serverCallHistory.push(params);
 
-    if (!this.calls.has(call.serverId)) {
-      this.calls.set(call.serverId, []);
+    // Trim history if needed
+    if (this.serverCallHistory.length > this.MAX_HISTORY) {
+      this.serverCallHistory = this.serverCallHistory.slice(-this.MAX_HISTORY);
     }
 
-    const serverCalls = this.calls.get(call.serverId)!;
-    serverCalls.push(callWithTimestamp);
+    // Track in analytics engine
+    analyticsEngine.track({
+      eventType: 'mcp_server_call',
+      data: params,
+      tags: {
+        server: params.serverId,
+        method: params.method,
+        status: params.success ? 'success' : 'error'
+      }
+    });
 
-    // Keep only recent calls
-    if (serverCalls.length > this.maxStoredCalls) {
-      serverCalls.shift();
-    }
+    logger.info({ params }, 'MCP server call tracked');
   }
 
-  getServerMetrics(serverId: string, timeWindow: string = '5m'): ServerMetrics {
-    const calls = this.calls.get(serverId) || [];
+  /**
+   * Track tool call with token usage
+   */
+  trackToolCall(params: ToolCallMetrics): void {
+    this.toolCallHistory.push(params);
+
+    if (this.toolCallHistory.length > this.MAX_HISTORY) {
+      this.toolCallHistory = this.toolCallHistory.slice(-this.MAX_HISTORY);
+    }
+
+    analyticsEngine.track({
+      eventType: 'tool_call',
+      agentId: params.agentId,
+      data: params,
+      tags: {
+        tool: params.toolName,
+        status: params.success ? 'success' : 'error'
+      }
+    });
+
+    logger.info({ params }, 'Tool call tracked');
+  }
+
+  /**
+   * Track resource access (memory, CPU, network, MCP servers)
+   */
+  trackResourceAccess(params: ResourceAccess): void {
+    this.resourceAccessHistory.push(params);
+
+    if (this.resourceAccessHistory.length > this.MAX_HISTORY) {
+      this.resourceAccessHistory = this.resourceAccessHistory.slice(-this.MAX_HISTORY);
+    }
+
+    analyticsEngine.track({
+      eventType: 'resource_access',
+      agentId: params.agentId,
+      data: params
+    });
+
+    logger.debug({ params }, 'Resource access tracked');
+  }
+
+  /**
+   * Detect anomalous tool calls (high frequency, privilege escalation, etc.)
+   */
+  detectAnomalousToolCalls(): AnalyticsInsight[] {
+    const insights: AnalyticsInsight[] = [];
     const now = Date.now();
-    const windowMs = this.parseTimeWindow(timeWindow);
-    
-    const recentCalls = calls.filter(
-      (call) => now - (call.timestamp || 0) <= windowMs
+    const last5Minutes = this.toolCallHistory.filter(
+      call => now - call.timestamp.getTime() < 5 * 60 * 1000
     );
 
-    if (recentCalls.length === 0) {
-      return {
-        totalCalls: 0,
-        successRate: 0,
-        avgLatency: 0,
-        p95Latency: 0,
-        errorRate: 0,
-      };
+    // Check for high-frequency calls
+    const callsByAgent = new Map<string, number>();
+    last5Minutes.forEach(call => {
+      callsByAgent.set(call.agentId, (callsByAgent.get(call.agentId) || 0) + 1);
+    });
+
+    callsByAgent.forEach((count, agentId) => {
+      if (count > 100) {
+        insights.push({
+          type: 'anomaly',
+          severity: 'warning',
+          title: 'High Frequency Tool Calls',
+          description: `Agent ${agentId} made ${count} tool calls in 5 minutes`,
+          data: {
+            agentId,
+            count,
+            timeWindow: '5m'
+          },
+          confidence: 0.85,
+          recommendations: ['Review agent behavior for potential issues']
+        });
+      }
+    });
+
+    // Check for unusual error rates
+    const totalCalls = last5Minutes.length;
+    const failedCalls = last5Minutes.filter(c => !c.success).length;
+    const errorRate = totalCalls > 0 ? failedCalls / totalCalls : 0;
+
+    if (errorRate > 0.2 && totalCalls > 10) {
+      insights.push({
+        type: 'anomaly',
+        severity: 'critical',
+        title: 'High Tool Call Error Rate',
+        description: `${(errorRate * 100).toFixed(1)}% of tool calls failing`,
+        data: {
+          errorRate,
+          totalCalls,
+          failedCalls
+        },
+        confidence: 0.92,
+        recommendations: ['Investigate tool integrations and error logs']
+      });
     }
 
-    const successfulCalls = recentCalls.filter((c) => c.success).length;
-    const durations = recentCalls.map((c) => c.duration).sort((a, b) => a - b);
-    const avgLatency = durations.reduce((a, b) => a + b, 0) / durations.length;
-    const p95Index = Math.floor(durations.length * 0.95);
-    const p95Latency = durations[p95Index] || 0;
+    return insights;
+  }
+
+  /**
+   * Get server performance metrics
+   */
+  getServerMetrics(serverId?: string): {
+    totalCalls: number;
+    successRate: number;
+    averageDuration: number;
+    errorsByType: Map<string, number>;
+  } {
+    const calls = serverId
+      ? this.serverCallHistory.filter(c => c.serverId === serverId)
+      : this.serverCallHistory;
+
+    const totalCalls = calls.length;
+    const successfulCalls = calls.filter(c => c.success).length;
+    const successRate = totalCalls > 0 ? successfulCalls / totalCalls : 0;
+
+    const totalDuration = calls.reduce((sum, c) => sum + c.duration, 0);
+    const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
+
+    const errorsByType = new Map<string, number>();
+    calls.filter(c => !c.success && c.errorType).forEach(c => {
+      errorsByType.set(c.errorType!, (errorsByType.get(c.errorType!) || 0) + 1);
+    });
 
     return {
-      totalCalls: recentCalls.length,
-      successRate: successfulCalls / recentCalls.length,
-      avgLatency,
-      p95Latency,
-      errorRate: 1 - successfulCalls / recentCalls.length,
+      totalCalls,
+      successRate,
+      averageDuration,
+      errorsByType
     };
   }
 
-  detectAnomalies(serverId: string): Anomaly[] {
-    const metrics = this.getServerMetrics(serverId, '5m');
-    const anomalies: Anomaly[] = [];
+  /**
+   * Get resource usage summary
+   */
+  getResourceUsageSummary(): Map<string, { total: number; average: number; peak: number }> {
+    const summary = new Map<string, { total: number; average: number; peak: number }>();
 
-    // High error rate detection
-    if (metrics.errorRate > 0.5 && metrics.totalCalls >= 10) {
-      anomalies.push({
-        type: 'high_error_rate',
-        severity: 'high',
-        description: `Error rate is ${(metrics.errorRate * 100).toFixed(1)}%`,
-        timestamp: Date.now(),
-      });
-    }
+    ['memory', 'cpu', 'network', 'mcp_server'].forEach(type => {
+      const resources = this.resourceAccessHistory.filter(r => r.resourceType === type);
+      const total = resources.reduce((sum, r) => sum + r.usage, 0);
+      const average = resources.length > 0 ? total / resources.length : 0;
+      const peak = resources.length > 0 ? Math.max(...resources.map(r => r.usage)) : 0;
 
-    // High latency detection
-    if (metrics.p95Latency > 5000 && metrics.totalCalls >= 10) {
-      anomalies.push({
-        type: 'high_latency',
-        severity: 'medium',
-        description: `P95 latency is ${metrics.p95Latency.toFixed(0)}ms`,
-        timestamp: Date.now(),
-      });
-    }
+      summary.set(type, { total, average, peak });
+    });
 
-    return anomalies;
+    return summary;
   }
 
-  clear(serverId?: string): void {
-    if (serverId) {
-      this.calls.delete(serverId);
-    } else {
-      this.calls.clear();
-    }
-  }
+  /**
+   * Clear old history (for memory management)
+   */
+  clearHistory(olderThan: Date): void {
+    const timestamp = olderThan.getTime();
+    this.serverCallHistory = this.serverCallHistory.filter(c => c.timestamp.getTime() > timestamp);
+    this.toolCallHistory = this.toolCallHistory.filter(c => c.timestamp.getTime() > timestamp);
+    this.resourceAccessHistory = this.resourceAccessHistory.filter(r => r.timestamp.getTime() > timestamp);
 
-  private parseTimeWindow(window: string): number {
-    const match = window.match(/^(\d+)([smhd])$/);
-    if (!match) return 5 * 60 * 1000; // Default 5 minutes
-
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
-
-    switch (unit) {
-      case 's':
-        return value * 1000;
-      case 'm':
-        return value * 60 * 1000;
-      case 'h':
-        return value * 60 * 60 * 1000;
-      case 'd':
-        return value * 24 * 60 * 60 * 1000;
-      default:
-        return 5 * 60 * 1000;
-    }
+    logger.info({ olderThan }, 'Cleared old monitoring history');
   }
 }
 
-export const mcpMonitor = new MCPMonitor();
+// Export singleton instance
+export const mcpMonitor = new MCPServerMonitor();
