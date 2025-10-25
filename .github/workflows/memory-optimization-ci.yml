@@ -1,0 +1,298 @@
+name: Memory Optimization CI with Claude Memory Tool
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.json'
+      - '.github/workflows/memory-optimization-ci.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - '**/*.js'
+      - '**/*.json'
+      - '.github/workflows/memory-optimization-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  memory-integration-tests:
+    name: Memory Integration Tests (${{ matrix.memory-config }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        memory-config:
+          - small
+          - medium
+          - large
+        include:
+          - memory-config: small
+            max-memory: 512
+            context-size: 1000
+            parallel-ops: 2
+          - memory-config: medium
+            max-memory: 2048
+            context-size: 5000
+            parallel-ops: 5
+          - memory-config: large
+            max-memory: 4096
+            context-size: 10000
+            parallel-ops: 10
+    
+    env:
+      NODE_ENV: test
+      MEMORY_CONFIG: ${{ matrix.memory-config }}
+      MAX_MEMORY_MB: ${{ matrix.max-memory }}
+      CONTEXT_SIZE: ${{ matrix.context-size }}
+      PARALLEL_OPERATIONS: ${{ matrix.parallel-ops }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies in parallel
+        run: |
+          npm ci --prefer-offline --no-audit --parallel
+        timeout-minutes: 10
+        continue-on-error: false
+      
+      - name: Verify Claude Memory Tool integration
+        run: |
+          echo "Verifying Claude Memory Tool setup for ${{ matrix.memory-config }} configuration"
+          node --version
+          npm --version
+          echo "Memory limit: ${{ matrix.max-memory }}MB"
+          echo "Context size: ${{ matrix.context-size }}"
+          echo "Parallel operations: ${{ matrix.parallel-ops }}"
+      
+      - name: Run memory integration tests
+        id: memory-tests
+        run: |
+          set -e
+          echo "Running memory integration tests with Claude Memory Tool"
+          
+          # Create test results directory
+          mkdir -p test-results/memory-integration
+          
+          # Run memory integration tests
+          npm run test:memory:integration || {
+            echo "Memory integration tests failed"
+            exit 1
+          }
+        timeout-minutes: 15
+        continue-on-error: false
+      
+      - name: Validate memory persistence
+        id: memory-persistence
+        run: |
+          set -e
+          echo "Validating memory persistence across sessions"
+          
+          # Test memory persistence
+          npm run test:memory:persistence -- --config=${{ matrix.memory-config }} || {
+            echo "Memory persistence validation failed"
+            exit 1
+          }
+        timeout-minutes: 10
+        continue-on-error: false
+      
+      - name: Validate memory cleanup
+        id: memory-cleanup
+        run: |
+          set -e
+          echo "Validating memory cleanup and garbage collection"
+          
+          # Test memory cleanup
+          npm run test:memory:cleanup -- --max-memory=${{ matrix.max-memory }} || {
+            echo "Memory cleanup validation failed"
+            exit 1
+          }
+        timeout-minutes: 10
+        continue-on-error: false
+      
+      - name: Test context editing with memory preservation
+        id: context-editing
+        run: |
+          set -e
+          echo "Testing context editing with memory preservation"
+          
+          # Test context editing
+          npm run test:memory:context-editing -- \
+            --context-size=${{ matrix.context-size }} \
+            --preserve-memory=true || {
+            echo "Context editing tests failed"
+            exit 1
+          }
+        timeout-minutes: 15
+        continue-on-error: false
+      
+      - name: Run parallel memory operations stress tests
+        id: parallel-stress-tests
+        run: |
+          set -e
+          echo "Running parallel memory operations stress tests"
+          
+          # Run parallel stress tests
+          npm run test:memory:parallel-stress -- \
+            --parallel-ops=${{ matrix.parallel-ops }} \
+            --max-memory=${{ matrix.max-memory }} \
+            --duration=300 || {
+            echo "Parallel stress tests failed"
+            exit 1
+          }
+        timeout-minutes: 20
+        continue-on-error: false
+      
+      - name: Generate memory usage reports
+        id: memory-reports
+        if: always()
+        run: |
+          set -e
+          echo "Generating memory usage reports"
+          
+          # Create reports directory
+          mkdir -p reports/memory-usage
+          
+          # Generate reports
+          npm run test:memory:report -- \
+            --config=${{ matrix.memory-config }} \
+            --output=reports/memory-usage || {
+            echo "Warning: Report generation failed"
+            exit 0
+          }
+          
+          # Display summary
+          if [ -f reports/memory-usage/summary.json ]; then
+            echo "Memory usage summary:"
+            cat reports/memory-usage/summary.json
+          fi
+        timeout-minutes: 5
+      
+      - name: Upload memory test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-test-results-${{ matrix.memory-config }}
+          path: |
+            test-results/
+            reports/memory-usage/
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: Upload memory usage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-reports-${{ matrix.memory-config }}
+          path: reports/memory-usage/
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: Check memory test thresholds
+        if: success()
+        run: |
+          set -e
+          echo "Checking memory test thresholds"
+          
+          # Validate thresholds
+          npm run test:memory:validate-thresholds -- \
+            --config=${{ matrix.memory-config }} \
+            --max-memory=${{ matrix.max-memory }} || {
+            echo "Memory thresholds exceeded"
+            exit 1
+          }
+
+  aggregate-memory-results:
+    name: Aggregate Memory Test Results
+    runs-on: ubuntu-latest
+    needs: [memory-integration-tests]
+    if: always()
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-test-results
+      
+      - name: Aggregate test results
+        run: |
+          set -e
+          echo "Aggregating memory test results from all configurations"
+          
+          # Create aggregate directory
+          mkdir -p aggregate-results
+          
+          # Find and combine all test results
+          find all-test-results -name '*.json' -o -name '*.xml' | while read file; do
+            echo "Processing: $file"
+            cp "$file" aggregate-results/ || true
+          done
+          
+          echo "Aggregation complete"
+          ls -lah aggregate-results/
+      
+      - name: Generate consolidated report
+        run: |
+          echo "Generating consolidated memory report"
+          
+          # Create summary
+          cat > aggregate-results/SUMMARY.md << 'EOF'
+          # Memory Optimization CI - Test Summary
+          
+          ## Test Configurations
+          - Small: 512MB, 1000 context size, 2 parallel ops
+          - Medium: 2048MB, 5000 context size, 5 parallel ops
+          - Large: 4096MB, 10000 context size, 10 parallel ops
+          
+          ## Tests Executed
+          1. Memory Integration Tests
+          2. Memory Persistence Validation
+          3. Memory Cleanup Validation
+          4. Context Editing with Memory Preservation
+          5. Parallel Memory Operations Stress Tests
+          6. Memory Usage Reports
+          
+          ## Artifacts
+          All test results and reports are available as workflow artifacts.
+          EOF
+          
+          cat aggregate-results/SUMMARY.md
+      
+      - name: Upload aggregate results
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregate-memory-results
+          path: aggregate-results/
+          retention-days: 90
+      
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('aggregate-results/SUMMARY.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Memory Optimization CI Results\n\n${summary}\n\nView detailed results in workflow artifacts.`
+            });
