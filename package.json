@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "npx tsc",
+    "lint": "npx tsc --noEmit",
     "start": "node dist/index.js",
     "agent:continuous": "node --max-old-space-size=2048 --enable-source-maps dist/index.js",
     "vercel:build": "npm run build",
@@ -25,7 +26,6 @@
     "test:all": "npm run test && npm run test:python",
     "greenlet:start": "npm run build && node dist/cli/a2a-cli.js start",
     "greenlet:cli": "npm run build && node dist/cli/a2a-cli.js",
-    "lint": "echo \"Linting check passed\"",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
