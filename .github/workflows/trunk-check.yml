@@ -1,5 +1,4 @@
 name: Trunk Check
-
 on:
   push:
     branches:
@@ -30,3 +29,4 @@ jobs:
           trunk check --all --upload
         env:
           TRUNK_TOKEN: ${{ secrets.TRUNK_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
