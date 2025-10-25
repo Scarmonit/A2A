@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "puppeteer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ]
+    }
+  },
+  "capabilities": {
+    "browser_automation": true,
+    "screenshot_capture": true,
+    "web_scraping": true,
+    "pdf_generation": true,
+    "headless_mode": true
+  },
+  "settings": {
+    "default_viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeout": 30000,
+    "headless": true
+  }
+}
