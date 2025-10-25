@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "npx tsc",
+    "lint": "npx tsc --noEmit",
     "start": "node dist/index.js",
     "agent:continuous": "node --max-old-space-size=2048 --enable-source-maps dist/index.js",
     "vercel:build": "npm run build",
@@ -13,6 +14,9 @@
     "vercel:deploy": "vercel --prod",
     "try": "node dist/scripts/try.js",
     "test": "npm run build && tsx --test tests/greenlet-integration.test.ts",
+    "unit": "npm run build && tsx --test tests/unit/**/*.test.ts",
+    "e2e": "npm run build && tsx --test tests/e2e/**/*.test.ts",
+    "integration": "npm run build && node --test dist/tests/integration/*.test.js",
     "test:integration": "npm run build && node --test dist/tests/integration/*.test.js",
     "test:integration:websocket": "npm run build && node --test dist/tests/integration/dashboard-websocket.test.js",
     "test:integration:monitoring": "npm run build && node --test dist/tests/integration/mcp-monitoring.test.js",
