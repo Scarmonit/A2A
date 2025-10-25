@@ -1,5 +1,4 @@
 name: Copilot Autonomous PR Review
-
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -13,7 +12,7 @@ on:
         type: number
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
@@ -44,215 +43,22 @@ jobs:
           script: |
             const pr_number = context.payload.pull_request?.number ||
                              context.payload.inputs?.pr_number;
-
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pr_number
             });
-
             const { data: files } = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pr_number
             });
-
             core.setOutput('pr_number', pr_number);
             core.setOutput('title', pr.title);
             core.setOutput('author', pr.user.login);
             core.setOutput('files_changed', files.length);
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
-
             return { pr, files };
 
       - name: Analyze code changes
-        id: analyze
-        run: |
-          echo "## Code Analysis Results" > review.md
-          echo "" >> review.md
-
-          # TypeScript check
-          echo "### TypeScript Compilation" >> review.md
-          if npx tsc --noEmit; then
-            echo "✅ TypeScript compiles successfully" >> review.md
-            echo "ts_pass=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ TypeScript compilation errors found" >> review.md
-            echo "ts_pass=false" >> $GITHUB_OUTPUT
-          fi
-          echo "" >> review.md
-
-          # Build check
-          echo "### Build Process" >> review.md
-          if npm run build; then
-            echo "✅ Build successful" >> review.md
-            echo "build_pass=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Build failed" >> review.md
-            echo "build_pass=false" >> $GITHUB_OUTPUT
-          fi
-          echo "" >> review.md
-
-          # Check for console.log (should use logger)
-          echo "### Code Quality Checks" >> review.md
-          CONSOLE_LOGS=$(git diff origin/main...HEAD | grep -c "console\.log" || echo 0)
-          if [ $CONSOLE_LOGS -gt 0 ]; then
-            echo "⚠️ Found $CONSOLE_LOGS console.log statements - use pino logger instead" >> review.md
-            echo "has_console_logs=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ No console.log statements" >> review.md
-            echo "has_console_logs=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Check for proper error handling
-          TRY_CATCH=$(git diff origin/main...HEAD -- "*.ts" | grep -c "try {" || echo 0)
-          if [ $TRY_CATCH -eq 0 ]; then
-            echo "⚠️ No error handling detected in changes" >> review.md
-            echo "needs_error_handling=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Error handling present" >> review.md
-            echo "needs_error_handling=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Check for tests
-          TEST_FILES=$(git diff origin/main...HEAD --name-only | grep -c "test" || echo 0)
-          if [ $TEST_FILES -eq 0 ] && [ ${{ steps.pr.outputs.additions }} -gt 50 ]; then
-            echo "⚠️ Large PR without test changes" >> review.md
-            echo "needs_tests=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Tests included or PR is small" >> review.md
-            echo "needs_tests=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Check for security issues
-        id: security
-        run: |
-          echo "### Security Analysis" >> review.md
-
-          # Check for hardcoded secrets
-          if git diff origin/main...HEAD | grep -iE "(api[_-]?key|secret|password|token)" | grep -v "process.env"; then
-            echo "⚠️ Potential hardcoded secrets detected" >> review.md
-            echo "has_secrets=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ No obvious hardcoded secrets" >> review.md
-            echo "has_secrets=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Check npm audit on new dependencies
-          if git diff origin/main...HEAD -- package.json | grep -q "\"dependencies\""; then
-            echo "Dependencies changed, running security audit..." >> review.md
-            npm audit --json > audit.json || true
-            CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit.json)
-            if [ $CRITICAL -gt 0 ]; then
-              echo "❌ New dependencies introduce critical vulnerabilities" >> review.md
-              echo "has_vuln=true" >> $GITHUB_OUTPUT
-            else
-              echo "✅ No critical vulnerabilities in dependencies" >> review.md
-              echo "has_vuln=false" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-      - name: Generate review feedback
-        id: feedback
-        run: |
-          cat review.md
-
-          FEEDBACK="## 🤖 Autonomous Code Review\n\n"
-          FEEDBACK+="### Summary\n"
-          FEEDBACK+="- Files changed: ${{ steps.pr.outputs.files_changed }}\n"
-          FEEDBACK+="- Additions: +${{ steps.pr.outputs.additions }}\n"
-          FEEDBACK+="- Deletions: -${{ steps.pr.outputs.deletions }}\n\n"
-
-          FEEDBACK+="$(cat review.md)\n\n"
-
-          # Add recommendations
-          FEEDBACK+="### Recommendations\n\n"
-
-          if [ "${{ steps.analyze.outputs.has_console_logs }}" == "true" ]; then
-            FEEDBACK+="- 🔄 Replace console.log with pino logger for structured logging\n"
-          fi
-
-          if [ "${{ steps.analyze.outputs.needs_error_handling }}" == "true" ]; then
-            FEEDBACK+="- ⚠️ Add proper error handling (try/catch blocks)\n"
-          fi
-
-          if [ "${{ steps.analyze.outputs.needs_tests }}" == "true" ]; then
-            FEEDBACK+="- 🧪 Add tests for new functionality\n"
-          fi
-
-          if [ "${{ steps.security.outputs.has_secrets }}" == "true" ]; then
-            FEEDBACK+="- 🔒 Remove hardcoded secrets, use environment variables\n"
-          fi
-
-          # Determine approval status
-          if [ "${{ steps.analyze.outputs.ts_pass }}" == "true" ] && \
-             [ "${{ steps.analyze.outputs.build_pass }}" == "true" ] && \
-             [ "${{ steps.security.outputs.has_secrets }}" != "true" ] && \
-             [ "${{ steps.security.outputs.has_vuln }}" != "true" ]; then
-            echo "approve=true" >> $GITHUB_OUTPUT
-            FEEDBACK+="### ✅ Approval Status: APPROVED\n\n"
-            FEEDBACK+="This PR meets the automated quality standards.\n"
-          else
-            echo "approve=false" >> $GITHUB_OUTPUT
-            FEEDBACK+="### ⚠️ Approval Status: CHANGES REQUESTED\n\n"
-            FEEDBACK+="Please address the issues above before merging.\n"
-          fi
-
-          echo "feedback<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$FEEDBACK" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Post review comment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: ${{ steps.pr.outputs.pr_number }},
-              body: `${{ steps.feedback.outputs.feedback }}`
-            });
-
-      - name: Submit review
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const approve = '${{ steps.feedback.outputs.approve }}' === 'true';
-
-            await github.rest.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ steps.pr.outputs.pr_number }},
-              event: approve ? 'APPROVE' : 'REQUEST_CHANGES',
-              body: approve ?
-                '✅ Automated review passed. Code meets quality standards.' :
-                '⚠️ Automated review found issues. Please address the feedback above.'
-            });
-
-      - name: Add labels
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const labels = ['copilot-reviewed'];
-
-            if ('${{ steps.analyze.outputs.ts_pass }}' !== 'true') {
-              labels.push('needs:fix');
-            }
-            if ('${{ steps.analyze.outputs.needs_tests }}' === 'true') {
-              labels.push('needs:tests');
-            }
-            if ('${{ steps.security.outputs.has_secrets }}' === 'true' ||
-                '${{ steps.security.outputs.has_vuln }}' === 'true') {
-              labels.push('security');
-            }
-            if ('${{ steps.feedback.outputs.approve }}' === 'true') {
-              labels.push('ready-to-merge');
-            }
-
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: ${{ steps.pr.outputs.pr_number }},
-              labels: labels
-            });
