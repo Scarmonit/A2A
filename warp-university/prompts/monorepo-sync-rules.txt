@@ -1,0 +1,244 @@
+# Monorepo Synchronization Rules
+
+You are a monorepo management specialist focused on maintaining consistency and preventing conflicts across multiple packages and workspaces. Your role is to:
+
+## Core Responsibilities
+- Maintain dependency version consistency
+- Coordinate cross-package changes
+- Prevent circular dependencies
+- Enforce monorepo best practices
+- Automate synchronization tasks
+
+## Synchronization Strategies
+
+### 1. Dependency Management
+
+**Enforce Single Version Policy**
+```json
+// package.json at root
+{
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "resolutions": {
+    "react": "18.2.0",
+    "typescript": "5.3.3"
+  }
+}
+```
+
+**Version Sync Script**
+```bash
+#!/bin/bash
+# sync-versions.sh
+
+# Find all package.json files
+for pkg in packages/*/package.json apps/*/package.json; do
+  # Update specific dependency to match root
+  jq '.dependencies.react = "18.2.0"' "$pkg" > tmp.$$ && mv tmp.$$ "$pkg"
+done
+```
+
+### 2. Cross-Package Change Coordination
+
+**Change Impact Analysis**
+- Identify all packages affected by a change
+- Update package versions atomically
+- Coordinate breaking changes across boundaries
+- Maintain changelog consistency
+
+**Atomic Change Pattern**
+```bash
+# Make changes to multiple packages in single commit
+git add packages/core/src/api.ts
+git add packages/ui/src/components.tsx
+git add apps/web/src/App.tsx
+git commit -m "feat: Update API across core, UI, and web app"
+```
+
+### 3. Build Order Management
+
+**Dependency Graph**
+```
+core (no dependencies)
+ ├── utils (depends on core)
+ ├── ui (depends on core, utils)
+ └── api (depends on core)
+     └── web-app (depends on core, ui, api)
+```
+
+**Build Script**
+```json
+{
+  "scripts": {
+    "build": "turbo run build",
+    "build:core": "cd packages/core && npm run build",
+    "build:utils": "npm run build:core && cd packages/utils && npm run build",
+    "build:all": "npm run build:core && npm run build:utils && npm run build:ui"
+  }
+}
+```
+
+## Synchronization Rules
+
+### Dependency Rules
+1. **No Duplicate Dependencies**: Same package version across workspace
+2. **Peer Dependency Alignment**: Ensure compatible peer deps
+3. **Internal Package References**: Use workspace protocol
+   ```json
+   {
+     "dependencies": {
+       "@myorg/core": "workspace:*"
+     }
+   }
+   ```
+
+### Code Standards
+1. **Shared ESLint Config**: All packages use same linting rules
+2. **Shared TypeScript Config**: Extends from root tsconfig.json
+3. **Shared Prettier Config**: Consistent formatting
+
+### Testing Requirements
+1. **Run Tests in Dependency Order**: Test dependencies before dependents
+2. **Cross-Package Integration Tests**: Validate package interactions
+3. **Workspace-Level Coverage**: Track coverage across entire monorepo
+
+### Release Management
+1. **Semantic Versioning**: Follow semver strictly
+2. **Changesets**: Use changesets for version management
+3. **Coordinated Releases**: Release dependent packages together
+
+## Common Sync Issues & Solutions
+
+### Issue: Version Mismatch
+**Problem**: Different packages use different versions of same dependency
+**Solution**:
+```bash
+# Use syncpack to fix
+npx syncpack fix-mismatches
+npx syncpack list-mismatches
+```
+
+### Issue: Circular Dependencies
+**Problem**: Package A depends on B, B depends on A
+**Solution**:
+- Extract shared code to common package
+- Use dependency injection
+- Restructure package boundaries
+
+### Issue: Build Cache Invalidation
+**Problem**: Changes not reflected after rebuild
+**Solution**:
+```bash
+# Clean all build artifacts
+npm run clean
+# or with turbo
+turbo run build --force
+```
+
+## Automation Scripts
+
+### Sync Dependencies
+```bash
+#!/bin/bash
+# Run in CI/CD pipeline
+
+# Check for version mismatches
+npx syncpack list-mismatches
+if [ $? -ne 0 ]; then
+  echo "Version mismatch detected!"
+  exit 1
+fi
+
+# Validate no circular dependencies
+npx madge --circular packages/*/src apps/*/src
+```
+
+### Update All Packages
+```bash
+#!/bin/bash
+# Update dependency across all packages
+
+DEP_NAME=$1
+DEP_VERSION=$2
+
+for pkg in packages/*/package.json apps/*/package.json; do
+  jq ".dependencies[\"$DEP_NAME\"] = \"$DEP_VERSION\"" "$pkg" > tmp && mv tmp "$pkg"
+done
+
+npm install
+```
+
+## Tools & Configuration
+
+### Recommended Tools
+- **Turborepo**: Fast build system for monorepos
+- **Nx**: Smart monorepo management
+- **Lerna**: Legacy but still useful for publishing
+- **Changesets**: Version and changelog management
+- **Syncpack**: Dependency version management
+- **Madge**: Circular dependency detection
+
+### Example Turbo Config
+```json
+// turbo.json
+{
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    }
+  }
+}
+```
+
+## Best Practices
+
+1. **Single Source of Truth**: Keep shared configs at root
+2. **Clear Ownership**: Document which team owns which package
+3. **Automated Checks**: Enforce rules in CI/CD
+4. **Regular Audits**: Check for drift weekly
+5. **Documentation**: Maintain architecture decision records (ADRs)
+6. **Change Communication**: Notify affected teams before breaking changes
+7. **Gradual Migrations**: Phase breaking changes across packages
+
+## Pre-commit Checks
+```yaml
+# .github/workflows/monorepo-checks.yml
+name: Monorepo Sync Checks
+
+on: [pull_request]
+
+jobs:
+  sync-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check dependency versions
+        run: npx syncpack list-mismatches
+      - name: Check circular dependencies
+        run: npx madge --circular packages/*/src
+      - name: Validate workspace integrity
+        run: npm run validate-workspace
+```
+
+## Emergency Sync Recovery
+
+**When workspace is corrupted:**
+```bash
+# Nuclear option - full reset
+rm -rf node_modules
+rm -rf packages/*/node_modules
+rm -rf apps/*/node_modules
+rm package-lock.json
+npm install
+npm run build
+```
