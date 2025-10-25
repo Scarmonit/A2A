@@ -40,23 +40,31 @@ jobs:
             }
             // Create TypeScript errors issue if needed
             if (tsErrors && tsErrors.length > 0) {
+              const bodyText = [
+                '## TypeScript Compilation Errors',
+                '',
+                'Copilot detected TypeScript errors that need immediate attention.',
+                '',
+                '### Errors',
+                '```',
+                tsErrors.slice(0, 5000),
+                '```',
+                '',
+                '### Action Required',
+                '- [ ] Review and fix TypeScript errors',
+                '- [ ] Run `npm run build` to verify',
+                '- [ ] Commit fixes',
+                '',
+                '**Priority**: HIGH',
+                '**Assigned by**: Copilot Autonomous System',
+                '**Created**: ' + new Date().toISOString()
+              ].join('\n');
+              
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: '🔧 [COPILOT] Fix TypeScript compilation errors',
-                body: `## TypeScript Compilation Errors
-Copilot detected TypeScript errors that need immediate attention.
-### Errors
-\`\`\`
-${tsErrors.slice(0, 5000)}
-\`\`\`
-### Action Required
-- [ ] Review and fix TypeScript errors
-- [ ] Run \`npm run build\` to verify
-- [ ] Commit fixes
-**Priority**: HIGH
-**Assigned by**: Copilot Autonomous System
-**Created**: ${new Date().toISOString()}`,
+                body: bodyText,
                 labels: ['copilot-generated', 'type:bug', 'priority:high'],
                 assignees: ['Scarmonit']
               });
@@ -68,23 +76,31 @@ ${tsErrors.slice(0, 5000)}
               todos = execSync('grep -r "TODO\\|FIXME" src/ || true', { encoding: 'utf-8' });
             } catch (e) {}
             if (todos && todos.split('\n').length > 10) {
+              const bodyText = [
+                '## Code Cleanup Needed',
+                '',
+                'Found ' + todos.split('\n').length + ' TODO/FIXME comments in the codebase.',
+                '',
+                '### Sample TODOs',
+                '```',
+                todos.split('\n').slice(0, 20).join('\n'),
+                '```',
+                '',
+                '### Action Items',
+                '- [ ] Review all TODO comments',
+                '- [ ] Address or document FIXMEs',
+                '- [ ] Create specific issues for complex items',
+                '- [ ] Remove resolved comments',
+                '',
+                '**Priority**: MEDIUM',
+                '**Assigned by**: Copilot Autonomous System'
+              ].join('\n');
+              
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: '🧹 [COPILOT] Clean up TODO and FIXME comments',
-                body: `## Code Cleanup Needed
-Found ${todos.split('\n').length} TODO/FIXME comments in the codebase.
-### Sample TODOs
-\`\`\`
-${todos.split('\n').slice(0, 20).join('\n')}
-\`\`\`
-### Action Items
-- [ ] Review all TODO comments
-- [ ] Address or document FIXMEs
-- [ ] Create specific issues for complex items
-- [ ] Remove resolved comments
-**Priority**: MEDIUM
-**Assigned by**: Copilot Autonomous System`,
+                body: bodyText,
                 labels: ['copilot-generated', 'type:chore', 'priority:medium'],
                 assignees: ['Scarmonit']
               });
@@ -98,26 +114,34 @@ ${todos.split('\n').slice(0, 20).join('\n')}
               const critical = auditData.metadata?.vulnerabilities?.critical || 0;
               const high = auditData.metadata?.vulnerabilities?.high || 0;
               if (critical > 0 || high > 0) {
+                const bodyText = [
+                  '## Security Vulnerabilities Detected',
+                  '',
+                  '- **Critical**: ' + critical,
+                  '- **High**: ' + high,
+                  '',
+                  '### Immediate Action Required',
+                  '```bash',
+                  'npm audit fix',
+                  'npm audit fix --force  # if needed',
+                  '```',
+                  '',
+                  '### Next Steps',
+                  '- [ ] Run `npm audit fix`',
+                  '- [ ] Review changes',
+                  '- [ ] Test thoroughly',
+                  '- [ ] Commit security updates',
+                  '',
+                  '**Priority**: CRITICAL',
+                  '**Assigned by**: Copilot Autonomous System',
+                  '**Created**: ' + new Date().toISOString()
+                ].join('\n');
+                
                 await github.rest.issues.create({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title: '🔒 [COPILOT] URGENT: Fix security vulnerabilities',
-                  body: `## Security Vulnerabilities Detected
-- **Critical**: ${critical}
-- **High**: ${high}
-### Immediate Action Required
-\`\`\`bash
-npm audit fix
-npm audit fix --force  # if needed
-\`\`\`
-### Next Steps
-- [ ] Run \`npm audit fix\`
-- [ ] Review changes
-- [ ] Test thoroughly
-- [ ] Commit security updates
-**Priority**: CRITICAL
-**Assigned by**: Copilot Autonomous System
-**Created**: ${new Date().toISOString()}`,
+                  body: bodyText,
                   labels: ['copilot-generated', 'type:security', 'priority:critical'],
                   assignees: ['Scarmonit']
                 });
@@ -134,19 +158,26 @@ npm audit fix --force  # if needed
             if (!readme.includes('## Troubleshooting')) missingSections.push('Troubleshooting');
             if (!readme.includes('## FAQ')) missingSections.push('FAQ');
             if (missingSections.length > 0) {
+              const bodyText = [
+                '## Documentation Improvements Needed',
+                '',
+                'Missing sections: ' + missingSections.join(', '),
+                '',
+                '### Recommended Additions',
+                ...missingSections.map(s => '- [ ] Add ' + s + ' section'),
+                '- [ ] Add more code examples',
+                '- [ ] Include troubleshooting guide',
+                '- [ ] Create FAQ section',
+                '',
+                '**Priority**: MEDIUM',
+                '**Assigned by**: Copilot Autonomous System'
+              ].join('\n');
+              
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: '📚 [COPILOT] Enhance documentation',
-                body: `## Documentation Improvements Needed
-Missing sections: ${missingSections.join(', ')}
-### Recommended Additions
-${missingSections.map(s => `- [ ] Add ${s} section`).join('\n')}
-- [ ] Add more code examples
-- [ ] Include troubleshooting guide
-- [ ] Create FAQ section
-**Priority**: MEDIUM
-**Assigned by**: Copilot Autonomous System`,
+                body: bodyText,
                 labels: ['copilot-generated', 'type:documentation', 'priority:medium'],
                 assignees: ['Scarmonit']
               });
@@ -171,22 +202,30 @@ ${missingSections.map(s => `- [ ] Add ${s} section`).join('\n')}
               });
               const hasReview = comments.some(c => c.body.includes('🤖 Copilot Review'));
               if (!hasReview) {
+                const bodyText = [
+                  '🤖 **Copilot Review Initiated**',
+                  '',
+                  "I'm now actively monitoring this PR.",
+                  '',
+                  '**Next Steps**:',
+                  '1. Running automated checks',
+                  '2. Analyzing code changes',
+                  '3. Will provide detailed review within 5 minutes',
+                  '4. Auto-merge when all checks pass',
+                  '',
+                  'Stay tuned for detailed feedback!',
+                  '',
+                  '---',
+                  '*Copilot Autonomous System - Activated ' + new Date().toISOString() + '*'
+                ].join('\n');
+                
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: pr.number,
-                  body: `🤖 **Copilot Review Initiated**
-I'm now actively monitoring this PR.
-**Next Steps**:
-1. Running automated checks
-2. Analyzing code changes
-3. Will provide detailed review within 5 minutes
-4. Auto-merge when all checks pass
-Stay tuned for detailed feedback!
----
-*Copilot Autonomous System - Activated ${new Date().toISOString()}*`
+                  body: bodyText
                 });
-                console.log(`✅ Commented on PR #${pr.number}`);
+                console.log('✅ Commented on PR #' + pr.number);
               }
             }
       - name: Create repository improvement PR
