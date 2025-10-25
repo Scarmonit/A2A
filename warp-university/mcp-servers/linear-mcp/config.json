@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "linear": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-linear"
+      ],
+      "env": {
+        "LINEAR_API_KEY": "<your-linear-api-key>"
+      }
+    }
+  },
+  "capabilities": {
+    "issue_management": true,
+    "project_tracking": true,
+    "workflow_automation": true,
+    "team_collaboration": true
+  },
+  "settings": {
+    "auto_sync": true,
+    "webhook_enabled": false,
+    "default_team_id": null
+  }
+}
