@@ -1,0 +1,32 @@
+name: Trunk Check
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  trunk-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install Trunk CLI
+        run: |
+          curl https://get.trunk.io -fsSL | bash
+          
+      - name: Run Trunk Check
+        run: |
+          trunk check --all --upload
+        env:
+          TRUNK_TOKEN: ${{ secrets.TRUNK_TOKEN }}
