@@ -18,11 +18,11 @@
     "unit": "npm run build && tsx --test tests/enhanced-features.test.ts tests/greenlet-integration.test.ts",
     "e2e": "npm run build && node --test dist/tests/integration/e2e-monitoring.test.js",
     "integration": "npm run build && node --test dist/tests/integration/*.test.js",
-    "test:integration": "npm run build && node --test dist/tests/integration/*.test.js",
+    "test:integration": "npm run integration",
     "test:integration:websocket": "npm run build && node --test dist/tests/integration/dashboard-websocket.test.js",
     "test:integration:monitoring": "npm run build && node --test dist/tests/integration/mcp-monitoring.test.js",
     "test:integration:load": "npm run build && node --test dist/tests/integration/dashboard-load.test.js",
-    "test:integration:e2e": "npm run build && node --test dist/tests/integration/e2e-monitoring.test.js",
+    "test:integration:e2e": "npm run e2e",
     "test:python": "python3 -m pytest tests/python/test_greenlet_agent.py -v",
     "test:all": "npm run test && npm run test:python",
     "greenlet:start": "npm run build && node dist/cli/a2a-cli.js start",
@@ -88,7 +88,7 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
+    "typescript": "^5.7.2",
     "vercel": "^39.2.4"
   },
   "engines": {
