@@ -3,7 +3,6 @@
 // configuration management, result streaming, error recovery, progress tracking, and resource pooling.
 import { execa } from 'execa'
 import WebSocket, { WebSocketServer } from 'ws'
-
 // ---------- Types ----------
 export type ContextSource = {
   selectedText?: string
@@ -11,7 +10,6 @@ export type ContextSource = {
   currentTabTitle?: string
   metadata?: Record<string, unknown>
 }
-
 export type TaskInput<T = unknown> = {
   id: string
   payload?: T
@@ -20,7 +18,6 @@ export type TaskInput<T = unknown> = {
   priority?: number
   requires?: string[] // dependencies by id
 }
-
 export type TaskResult<R = unknown> = {
   id: string
   status: 'success' | 'error' | 'skipped'
@@ -31,7 +28,6 @@ export type TaskResult<R = unknown> = {
   error?: { message: string; code?: string; retried?: number; stack?: string }
   logs?: string[]
 }
-
 export type ExecutorConfig = {
   concurrency: number
   maxRetries: number
@@ -41,28 +37,24 @@ export type ExecutorConfig = {
   resourcePool?: { limits: Record<string, number> } // named resource => max tokens
   progressIntervalMs?: number
 }
-
 export type ApiBatchRequest = {
   endpoint: string
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   headers?: Record<string, string>
   body?: unknown
 }
-
 export type ApiBatchResponse = {
   ok: boolean
   status: number
   data?: unknown
   error?: string
 }
-
 export type BrowserCommand =
   | { type: 'navigate'; url: string }
   | { type: 'click'; selector: string }
   | { type: 'type'; selector: string; text: string }
   | { type: 'wait'; ms: number }
   | { type: 'screenshot'; path?: string }
-
 export type ProgressEvent = {
   type:
     | 'executor:start'
@@ -74,19 +66,15 @@ export type ProgressEvent = {
   payload: Record<string, unknown>
   ts: number
 }
-
 export type TaskContext = {
   request: (req: ApiBatchRequest) => Promise<ApiBatchResponse>
   browser: (cmds: BrowserCommand[]) => Promise<void>
   acquire: (name: string, amount: number) => Promise<() => void>
 }
-
 // ---------- Utils ----------
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
-
 const DEFAULT_CFG: ExecutorConfig = {
   concurrency: 4,
   maxRetries: 3,
@@ -94,21 +82,17 @@ const DEFAULT_CFG: ExecutorConfig = {
   progressIntervalMs: 5000,
   batch: { maxSize: 10, maxWaitMs: 500 }
 }
-
 // Resource pool (semaphore-like)
 class ResourcePool {
   private pools = new Map<string, { tokens: number; queue: Array<(release: () => void) => void> }>()
-
   constructor(private limits: Record<string, number> = { default: 4 }) {
     for (const [name, limit] of Object.entries(this.limits)) {
       this.pools.set(name, { tokens: limit, queue: [] })
     }
   }
-
   async acquire(name: string, amount = 1): Promise<() => void> {
     const pool = this.pools.get(name)
     if (!pool) throw new Error(`Unknown resource pool: ${name}`)
-
     return new Promise((resolve) => {
       const tryAcquire = () => {
         if (pool.tokens >= amount) {
@@ -128,7 +112,6 @@ class ResourcePool {
     })
   }
 }
-
 // Retry with exponential backoff
 async function retry<T>(fn: () => Promise<T>, id: string, maxRetries = 3, baseBackoff = 1000): Promise<T> {
   let attempt = 0
@@ -144,7 +127,6 @@ async function retry<T>(fn: () => Promise<T>, id: string, maxRetries = 3, baseBa
   }
   throw new Error('Retry exhausted')
 }
-
 // WebSocket server for progress events
 function startWsServer(port: number, onConnection?: (ws: WebSocket) => void): WebSocketServer {
   const wss = new WebSocketServer({ port })
@@ -153,7 +135,6 @@ function startWsServer(port: number, onConnection?: (ws: WebSocket) => void): We
   })
   return wss
 }
-
 // Browser automation helper
 async function runBrowserCommands(
   commands: BrowserCommand[],
@@ -162,24 +143,15 @@ async function runBrowserCommands(
   for (const cmd of commands) {
     emitFn({ type: 'log', payload: { scope: 'browser', cmd }, ts: Date.now() })
     
-    // Spawn browser automation process
-    const child = execa('node', ['automation/run-browser.js'])
-    
     try {
-      // Write command to stdin
-      if (child.stdin) {
-        child.stdin.write(JSON.stringify(cmd))
-        child.stdin.end()
-      }
-      
-      await child
+      // Spawn browser automation process and pass command as argument
+      await execa('node', ['automation/run-browser.js', JSON.stringify(cmd)])
     } catch (e: any) {
       emitFn({ type: 'log', payload: { scope: 'browser-error', error: e.message }, ts: Date.now() })
       throw e
     }
   }
 }
-
 // API batch request helper
 async function makeRequest(req: ApiBatchRequest): Promise<ApiBatchResponse> {
   const { endpoint, method = 'GET', headers = {}, body } = req
@@ -209,22 +181,18 @@ async function makeRequest(req: ApiBatchRequest): Promise<ApiBatchResponse> {
     }
   }
 }
-
 // ---------- Main Class ----------
-
 export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
   private cfg: ExecutorConfig
   private pool: ResourcePool
   private results = new Map<string, TaskResult<TOut>>()
   private wss?: WebSocketServer
   private connections = new Set<WebSocket>()
-
   constructor(config: Partial<ExecutorConfig> = {}) {
     this.cfg = { ...DEFAULT_CFG, ...config }
     
     const limits = this.cfg.resourcePool?.limits || { default: this.cfg.concurrency }
     this.pool = new ResourcePool(limits)
-
     // Start WebSocket server if configured
     if (this.cfg.ws?.port) {
       this.wss = startWsServer(this.cfg.ws.port, (ws) => {
@@ -233,7 +201,6 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
       })
     }
   }
-
   private emit(event: ProgressEvent): void {
     // Broadcast to WebSocket connections
     for (const ws of this.connections) {
@@ -242,18 +209,15 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
       }
     }
   }
-
   private async request(req: ApiBatchRequest): Promise<ApiBatchResponse> {
     return makeRequest(req)
   }
-
   async run(
     tasks: TaskInput<TIn>[],
     worker: (task: TaskInput<TIn>, ctx: TaskContext) => Promise<TOut>
   ): Promise<TaskResult<TOut>[]> {
     this.results.clear()
     this.emit({ type: 'executor:start', payload: { total: tasks.length }, ts: Date.now() })
-
     // Sort tasks by priority (higher first), then by dependency order
     const sorted = [...tasks].sort((a, b) => (b.priority || 0) - (a.priority || 0))
     
@@ -271,7 +235,6 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
       }
       return ready.slice(0, this.cfg.concurrency) // limit to concurrency
     }
-
     // Process one task
     const runOne = async (t: TaskInput<TIn>) => {
       const result: TaskResult<TOut> = {
@@ -342,7 +305,6 @@ export class ParallelExecutorEnhanced<TIn = unknown, TOut = unknown> {
     return Array.from(this.results.values())
   }
 }
-
 // Example usage note (commented):
 // const exec = new ParallelExecutorEnhanced({ ws: { port: 8080 } })
 // const results = await exec.run(tasks, async (task, { request, browser, acquire }) => {
