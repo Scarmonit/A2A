@@ -1,0 +1,75 @@
+name: AI Agent Framework Testing
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 3 * * *'
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/ai-agent-framework-testing.yml'
+
+jobs:
+  run-examples:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        framework:
+          - name: crewai
+            repo: 'crewAIInc/crewAI'
+            setup: |
+              pip install "crewai[tools]==0.28.8" || pip install crewai
+              pip install uvicorn fastapi pydantic
+            command: |
+              python - <<'PY'
+              from crewai import Agent, Task, Crew
+              a = Agent(role='researcher', goal='test run', backstory='ci')
+              t = Task(description='Say hello')
+              c = Crew(agents=[a], tasks=[t])
+              print('Crew created:', bool(c))
+              PY
+          - name: dify
+            repo: 'langgenius/dify'
+            setup: |
+              pip install requests pyyaml
+            command: |
+              python - <<'PY'
+              import requests
+              print('Dify placeholder test OK')
+              PY
+          - name: autogen
+            repo: 'microsoft/autogen'
+            setup: |
+              pip install pyautogen
+            command: |
+              python - <<'PY'
+              import autogen
+              print('AutoGen import OK', autogen.__version__)
+              PY
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install framework deps
+        shell: bash
+        run: ${{ matrix.framework.setup }}
+
+      - name: Run example
+        shell: bash
+        run: ${{ matrix.framework.command }}
+
+  summary:
+    needs: run-examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Done
+        run: echo '# ✅ AI Agent framework smoke tests completed' >> $GITHUB_STEP_SUMMARY
