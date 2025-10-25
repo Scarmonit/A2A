@@ -4,13 +4,15 @@
  * Provides reusable test infrastructure for setting up and tearing down
  * the complete monitoring and dashboard stack.
  */
-
 import { EnhancedMCPManager } from '../../src/enhanced-mcp-manager.js';
 import { RealtimeDashboardHandler } from '../../src/realtime-dashboard-handler.js';
 import { mcpMonitor } from '../../src/mcp-monitor.js';
 import { auditLogger } from '../../src/audit-logger.js';
 import { aggregationCache } from '../../src/aggregation-cache.js';
 import WebSocket from 'ws';
+
+// Re-export for external use
+export { aggregationCache, mcpMonitor, auditLogger };
 
 export class TestEnvironment {
   mcpManager: EnhancedMCPManager;
@@ -32,10 +34,8 @@ export class TestEnvironment {
   async setup(): Promise<void> {
     // Start dashboard WebSocket server
     this.dashboardHandler.startWebSocketServer(this.port, '127.0.0.1');
-
     // Start metrics broadcast
     this.dashboardHandler.startMetricsBroadcast();
-
     // Wait for initialization
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -98,7 +98,6 @@ export class TestEnvironment {
         try {
           const message = JSON.parse(data.toString());
           messages.push(message);
-
           if (messages.length >= count) {
             clearTimeout(timeout);
             ws.off('message', messageHandler);
