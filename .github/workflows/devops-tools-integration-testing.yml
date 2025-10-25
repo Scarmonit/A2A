@@ -1,0 +1,141 @@
+name: DevOps Tools Integration Testing
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 2 * * *'
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/devops-tools-integration-testing.yml'
+
+jobs:
+  matrix-tests:
+    name: Validate DevOps Tools
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        tool:
+          - name: terraform
+            check: 'terraform -help'
+            install_unix: |
+              sudo apt-get update -y || true
+              sudo apt-get install -y wget unzip || true
+              TF_VERSION=1.8.5
+              wget -q https://releases.hashicorp.com/terraform/$TF_VERSION/terraform_${TF_VERSION}_linux_amd64.zip
+              unzip -o terraform_${TF_VERSION}_linux_amd64.zip
+              sudo mv terraform /usr/local/bin/
+            install_macos: |
+              brew update || true
+              brew install terraform || true
+            install_windows: |
+              choco install terraform -y
+          - name: ansible
+            check: 'ansible --version'
+            install_unix: |
+              sudo apt-get update -y || true
+              sudo apt-get install -y python3-pip || true
+              pipx ensurepath || true
+              pipx install ansible-core || pip3 install --user ansible
+            install_macos: |
+              brew update || true
+              brew install ansible || pip3 install ansible --break-system-packages || true
+            install_windows: |
+              pip install ansible-core || python -m pip install ansible-core
+          - name: kubectl
+            check: 'kubectl version --client=true --output=yaml'
+            install_unix: |
+              curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+            install_macos: |
+              brew install kubectl || brew install kubernetes-cli
+            install_windows: |
+              choco install kubernetes-cli -y
+          - name: helm
+            check: 'helm version --short'
+            install_unix: |
+              curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            install_macos: |
+              brew install helm
+            install_windows: |
+              choco install kubernetes-helm -y
+          - name: gh
+            check: 'gh --version'
+            install_unix: |
+              sudo apt-get update -y || true
+              type -p curl >/dev/null || sudo apt-get install curl -y
+              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+              sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+              sudo apt update
+              sudo apt install gh -y
+            install_macos: |
+              brew install gh
+            install_windows: |
+              choco install gh -y
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tool on Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          case "${{ matrix.tool.name }}-${{ runner.os }}" in
+            terraform-Linux)  ${{ matrix.tool.install_unix }} ;;
+            terraform-macOS)  ${{ matrix.tool.install_macos }} ;;
+            ansible-Linux)    ${{ matrix.tool.install_unix }} ;;
+            ansible-macOS)    ${{ matrix.tool.install_macos }} ;;
+            kubectl-Linux)    ${{ matrix.tool.install_unix }} ;;
+            kubectl-macOS)    ${{ matrix.tool.install_macos }} ;;
+            helm-Linux)       ${{ matrix.tool.install_unix }} ;;
+            helm-macOS)       ${{ matrix.tool.install_macos }} ;;
+            gh-Linux)         ${{ matrix.tool.install_unix }} ;;
+            gh-macOS)         ${{ matrix.tool.install_macos }} ;;
+          esac
+
+      - name: Install tool on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ('${{ matrix.tool.name }}' -eq 'terraform') { ${env:ChocolateyInstall}=$env:ChocolateyInstall; choco install terraform -y }
+          elseif ('${{ matrix.tool.name }}' -eq 'ansible') { pip install ansible-core }
+          elseif ('${{ matrix.tool.name }}' -eq 'kubectl') { choco install kubernetes-cli -y }
+          elseif ('${{ matrix.tool.name }}' -eq 'helm') { choco install kubernetes-helm -y }
+          elseif ('${{ matrix.tool.name }}' -eq 'gh') { choco install gh -y }
+
+      - name: Verify tool works
+        shell: bash
+        run: |
+          set -e
+          echo "Validating ${{ matrix.tool.name }}"
+          eval "${{ matrix.tool.check }}"
+
+      - name: Emit tool metadata
+        shell: bash
+        run: |
+          echo "tool=${{ matrix.tool.name }}" >> $GITHUB_OUTPUT
+          echo "os=${{ runner.os }}" >> $GITHUB_OUTPUT
+
+  summary:
+    name: Aggregate Results
+    needs: matrix-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize
+        run: |
+          echo "# ✅ DevOps Tools Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "Ran across OS: ubuntu, macOS, windows." >> $GITHUB_STEP_SUMMARY
+          echo "Tools: terraform, ansible, kubectl, helm, gh." >> $GITHUB_STEP_SUMMARY
