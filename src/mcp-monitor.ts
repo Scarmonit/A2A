@@ -107,7 +107,8 @@ export class MCPServerMonitor {
         severity: 'critical',
         title: 'High MCP Server Error Rate',
         description: `Error rate is ${(errorRate * 100).toFixed(1)}% in recent calls`,
-        data: { errorRate, recentCalls: recentCalls.length }
+        data: { errorRate, recentCalls: recentCalls.length },
+        confidence: 0.95
       });
     }
     // Check for slow responses
@@ -118,7 +119,8 @@ export class MCPServerMonitor {
         severity: 'warning',
         title: 'Slow MCP Server Responses',
         description: `Average response time is ${avgDuration.toFixed(0)}ms`,
-        data: { avgDuration, threshold: 5000 }
+        data: { avgDuration, threshold: 5000 },
+        confidence: 0.9
       });
     }
     return insights;
