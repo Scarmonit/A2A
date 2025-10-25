@@ -18,9 +18,7 @@ import client, { Counter, Gauge, Registry } from 'prom-client';
 import { initializeZeroClick } from './zero-click-integration.js';
 // Import and initialize enhanced memory integration (Claude Memory Tool)
 import { createClaudeMemoryTool } from './memory/claude-memory.js';
-
 export { agentRegistry } from './agents.js';
-
 // In-memory requests state
 type RequestStatus = 'queued' | 'running' | 'done' | 'error' | 'canceled';
 type RequestRecord = { id: string; agentId: string; capability: string; status: RequestStatus; createdAt: number; updatedAt: number; error?: string; result?: unknown; idempotencyKey?: string; sessionId?: string; };
@@ -34,52 +32,54 @@ const STREAM_HOST = process.env.STREAM_HOST || '127.0.0.1';
 const STREAM_TOKEN = process.env.STREAM_TOKEN;
 const MAX_SUBS_PER_REQUEST = parseInt(process.env.MAX_SUBS_PER_REQUEST || '16', 10);
 const MAX_CONCURRENCY = parseInt(process.env.MAX_CONCURRENCY || '50', 10);
-const MAX_QUEUE_SIZE = parseInt(process.env.MAX_QUEUE_SIZE || '10000', 10);
-const REQUEST_TTL_MS = parseInt(process.env.REQUEST_TTL_MS || String(5 * 60 * 1000), 10);
-const IDEMP_TTL_MS = parseInt(process.env.IDEMP_TTL_MS || String(15 * 60 * 1000), 10);
-const METRICS_PORT = parseInt(process.env.METRICS_PORT || '0', 10);
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-const logger = pino({ level: LOG_LEVEL, base: { service: 'a2a-mcp-server' } });
-const streamHub = ENABLE_STREAMING ? new StreamHub(STREAM_PORT, STREAM_HOST, { token: STREAM_TOKEN, maxSubsPerRequest: MAX_SUBS_PER_REQUEST }) : null;
-function ok<T>(data: T) { return { ok: true, data }; }
-function fail(message: string, code: string = 'ERR_BAD_REQUEST') { return { ok: false, error: { code, message } }; }
+const MAX_QUEUE_SIZE = parseInt(process.env.MAX_QUEUE_SIZE || '500', 10);
+const REQUEST_TTL_MS = parseInt(process.env.REQUEST_TTL_MS || '3600000', 10); // 1h
+const IDEMP_TTL_MS = parseInt(process.env.IDEMP_TTL_MS || '86400000', 10); // 24h
 
-// Metrics
-const registry: Registry = new client.Registry();
-client.collectDefaultMetrics({ register: registry });
-const reqCreated = new Counter({ name: 'a2a_requests_created_total', help: 'Requests created', registers: [registry] });
-const reqCompleted = new Counter({ name: 'a2a_requests_completed_total', help: 'Requests completed', labelNames: ['status'] as const, registers: [registry] });
-const runningGauge = new Gauge({ name: 'a2a_running_jobs', help: 'Currently running jobs', registers: [registry] });
-const queueGauge = new Gauge({ name: 'a2a_queue_size', help: 'Queue length', registers: [registry] });
-const wsClients = new Gauge({ name: 'a2a_ws_clients', help: 'WebSocket client count', registers: [registry] });
-const wsChannels = new Gauge({ name: 'a2a_ws_channels', help: 'WebSocket channel count', registers: [registry] });
-const broadcasts = new Counter({ name: 'a2a_stream_broadcasts_total', help: 'Stream broadcasts', registers: [registry] });
-const agentOps = new Counter({ name: 'a2a_agent_operations_total', help: 'Agent operations', labelNames: ['operation'] as const, registers: [registry] });
-const totalAgents = new Gauge({ name: 'a2a_total_agents', help: 'Total deployed agents', registers: [registry] });
-const enabledAgents = new Gauge({ name: 'a2a_enabled_agents', help: 'Enabled agents', registers: [registry] });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
-// Concurrency-limited queue
+// Prometheus metrics
+const register = new Registry();
+const reqCreated = new Counter({ name: 'a2a_requests_created', help: 'Total requests created', registers: [register] });
+const reqCompleted = new Counter({ name: 'a2a_requests_completed', help: 'Requests completed', labelNames: ['status'], registers: [register] });
+const queueGauge = new Gauge({ name: 'a2a_queue_length', help: 'Current queue length', registers: [register] });
+const runningGauge = new Gauge({ name: 'a2a_running', help: 'Currently running requests', registers: [register] });
+const wsClients = new Gauge({ name: 'a2a_ws_clients', help: 'WebSocket clients count', registers: [register] });
+const wsChannels = new Gauge({ name: 'a2a_ws_channels', help: 'WebSocket channels count', registers: [register] });
+const totalAgents = new Gauge({ name: 'a2a_total_agents', help: 'Total agents deployed', registers: [register] });
+const enabledAgents = new Gauge({ name: 'a2a_enabled_agents', help: 'Enabled agents count', registers: [register] });
+
 const queue: QueueItem[] = [];
 let running = 0;
-function maybeStartNext() {
+let streamHub: StreamHub | undefined;
+
+function ok(data: unknown) { return { ok: true, data }; }
+function fail(message: string, code?: string) { return { ok: false, error: { message, code } }; }
+
+async function maybeStartNext() {
   while (running < MAX_CONCURRENCY && queue.length > 0) {
     const item = queue.shift()!;
-    const r = requests.get(item.requestId);
-    if (!r || r.status === 'canceled') continue;
-    startJob(item.requestId, item.input);
+    runRequest(item.requestId, item.input);
   }
-  queueGauge.set(queue.length);
-  runningGauge.set(running);
 }
-async function startJob(requestId: string, input: any) {
-  running++;
-  runningGauge.set(running);
-  try { await runAgentJob(requestId, input); } catch (err: any) {
-    const r = requests.get(requestId);
-    if (r) {
-      r.status = 'error'; r.error = String(err?.message || err); r.updatedAt = Date.now();
-      streamHub?.broadcast(requestId, { type: 'error', requestId, ts: Date.now(), message: r.error! });
-    }
+
+async function runRequest(requestId: string, input: any) {
+  const r = requests.get(requestId);
+  if (!r || r.status !== 'queued') return;
+  r.status = 'running'; r.updatedAt = Date.now(); running++; runningGauge.set(running);
+  streamHub?.broadcast(requestId, { type: 'started', requestId, ts: Date.now() });
+  logger.info({ requestId, agentId: r.agentId, capability: r.capability }, 'request started');
+  try {
+    const result = await agentExecutor.execute(r.agentId, r.capability, input, { requestId, sessionId: r.sessionId });
+    r.result = result; r.status = 'done'; r.updatedAt = Date.now();
+    streamHub?.broadcast(requestId, { type: 'done', requestId, ts: Date.now(), result });
+    reqCompleted.inc({ status: 'done' });
+    logger.info({ requestId }, 'request done');
+  } catch (err: any) {
+    r.status = 'error'; r.error = String(err?.message || err); r.updatedAt = Date.now();
+    streamHub?.broadcast(requestId, { type: 'error', requestId, ts: Date.now(), message: r.error! });
+    reqCompleted.inc({ status: 'error' });
+    logger.error({ requestId, error: r.error }, 'request error');
   } finally { running = Math.max(0, running - 1); runningGauge.set(running); maybeStartNext(); }
 }
 
@@ -122,28 +122,34 @@ const claude_memory_tool = createClaudeMemoryTool({ headers: { 'anthropic-beta':
 
 const server = new Server(
   { name: 'a2a-mcp-server', version: '0.1.0' },
-  { tools: {
-      agent_control: {
-        description: 'Unified agent control: list agents, invoke capabilities, manage sessions, cancel requests, handoff between agents, get status, deploy agents, and manage agent lifecycle',
-        inputSchema: { type: 'object', additionalProperties: false, properties: { action: { type: 'string', enum: ['list_agents','describe_agent','open_session','close_session','invoke_agent','cancel','get_status','handoff','deploy_agent','deploy_batch','update_agent','enable_agent','disable_agent','remove_agent','get_stats','generate_agents','filter_agents','create_enhanced_agent','create_agent_ecosystem','list_enhanced_types','create_advanced_agent','create_advanced_ecosystem','list_advanced_types','execute_practical_tool','execute_advanced_tool','list_practical_tools','list_advanced_tools','grant_permission','request_permission','approve_permission','revoke_permission','get_permissions','create_mcp_server','add_tool_to_agent','share_tool','connect_to_agent_mcp','execute_shared_tool','discover_tools','get_sharing_agreements'] }, id: { type: 'string' }, sessionId: { type: 'string' }, agentId: { type: 'string' }, capability: { type: 'string' }, input: { type: 'object' }, idempotencyKey: { type: 'string' }, requestId: { type: 'string' }, fromRequestId: { type: 'string' }, toAgentId: { type: 'string' }, payload: { type: 'object' }, agent: { type: 'object' }, agents: { type: 'array' }, updates: { type: 'object' }, enabled: { type: 'boolean' }, count: { type: 'number' }, template: { type: 'object' }, filter: { type: 'object' }, tags: { type: 'array' }, category: { type: 'string' }, search: { type: 'string' }, targetAgentId: { type: 'string' }, permission: { type: 'string' }, delegable: { type: 'boolean' }, expiresIn: { type: 'number' }, reason: { type: 'string' }, grantId: { type: 'string' }, agentType: { type: 'string' }, useCase: { type: 'string' }, agentConfig: { type: 'object' }, toolName: { type: 'string' }, toolCategory: { type: 'string' }, toolParams: { type: 'object' }, executionContext: { type: 'object' }, mcpConfig: { type: 'object' }, tool: { type: 'object' }, providerAgentId: { type: 'string' }, consumerAgentId: { type: 'string' }, shareOptions: { type: 'object' }, discoveryFilters: { type: 'object' } }, required: ['action'] },
-        outputSchema: { type: 'object' },
-        async handler(params: any) {
-          const { action } = params;
-          switch (action) {
-            case 'list_agents': { const { filter } = params; const list = agentRegistry.list(filter); return ok({ agents: list }); }
-            case 'describe_agent': { const { id } = params; if (!id) return fail('id is required for describe_agent', 'ERR_BAD_REQUEST'); const a = agents[id]; if (!a) return fail(`Unknown agent: ${id}`, 'ERR_NOT_FOUND'); return ok(a); }
-            case 'open_session': { const { sessionId } = params; const sid = ensureRequestId(sessionId); return ok({ sessionId: sid }); }
-            case 'close_session': { return ok({ closed: true }); }
-            case 'invoke_agent': { const { agentId, capability, input, idempotencyKey, sessionId } = params; if (!agentId || !capability || !input) { return fail('agentId, capability, and input are required for invoke_agent', 'ERR_BAD_REQUEST'); } return invokeAgentInternal({ agentId, capability, input, idempotencyKey, sessionId }); }
-            case 'cancel': { const { requestId } = params; if (!requestId) return fail('requestId is required for cancel', 'ERR_BAD_REQUEST'); const r = requests.get(requestId); if (!r) return fail(`Unknown requestId ${requestId}`, 'ERR_NOT_FOUND'); if (r.status === 'done' || r.status === 'error') return ok({ canceled: false }); r.status = 'canceled'; r.updatedAt = Date.now(); streamHub?.broadcast(requestId, { type: 'error', requestId, ts: Date.now(), message: 'canceled', }); reqCompleted.inc({ status: 'canceled' }); logger.warn({ requestId }, 'request canceled'); return ok({ canceled: true }); }
-            case 'get_status': { const { requestId } = params; if (!requestId) return fail('requestId is required for get_status', 'ERR_BAD_REQUEST'); const r = requests.get(requestId); if (!r) return fail(`Unknown requestId ${requestId}`, 'ERR_NOT_FOUND'); return ok(r); }
-            case 'handoff': { const { fromRequestId, toAgentId, capability, payload } = params; if (!fromRequestId || !toAgentId || !capability || !payload) { return fail('fromRequestId, toAgentId, capability, and payload are required for handoff', 'ERR_BAD_REQUEST'); } const parent = requests.get(fromRequestId); if (!parent) return fail(`Unknown fromRequestId ${fromRequestId}`, 'ERR_NOT_FOUND'); return invokeAgentInternal({ agentId: toAgentId, capability, input: payload, sessionId: parent.sessionId, }); }
-            case 'deploy_agent': { const { agent } = params; if (!agent) return fail('agent is required for deploy_agent', 'ERR_BAD_REQUEST'); const success = agentRegistry.deploy(agent); return ok({ deployed: success, agentId: agent.id }); }
-            case 'deploy_batch': { const { agents: agentList } = params; if (!agentList || !Array.isArray(agentList)) { return fail('agents array is required for deploy_batch', 'ERR_BAD_REQUEST'); } const result = agentRegistry.deployBatch(agentList); return ok(result); }
-            case 'update_agent': { const { id, updates } = params; if (!id || !updates) { return fail('id and updates are required for update_agent', 'ERR_BAD_REQUEST'); } const success = agentRegistry.update(id, updates); return ok({ updated: success, agentId: id }); }
-            case 'enable_agent': { const { id } = params; if (!id) return fail('id is required for enable_agent', 'ERR_BAD_REQUEST'); const success = agentRegistry.setEnabled(id, true); return ok({ enabled: success, agentId: id }); }
-            case 'disable_agent': { const { id } = params; if (!id) return fail('id is required for disable_agent', 'ERR_BAD_REQUEST'); const success = agentRegistry.setEnabled(id, false); return ok({ disabled: success, agentId: id }); }
-            case 'remove_agent': { const { id } = params; if (!id) return fail('id is required for remove_agent', 'ERR_BAD_REQUEST'); const success = agentRegistry.remove(id); return ok({ removed: success, agentId: id }); }
-            case 'get_stats': { const stats = agentRegistry.getStats(); return ok(stats); }
-            case 'generate_agents': { const { count, template } = params; if (!count || count <= 0) { return fail('count > 0 is required for generate_agents', 'ERR_BAD_REQUEST'); } const generated = agentRegistry.generateAgents(count, template); const result = agentRegistry.deployBatch(generated); return ok({ ...result, generated: generated.length }); }
-            case 'filter_agents': { const
+  {
+    capabilities: { tools: {}, resources: {}, prompts: {} },
+  }
+);
+
+server.setRequestHandler('tools/list', async () => ({
+  tools: [
+    { name: 'agent_control', description: 'Unified agent control', inputSchema: { type: 'object' } },
+  ],
+}));
+
+server.setRequestHandler('tools/call', async (request) => {
+  const { name, arguments: params } = request.params as any;
+  if (name !== 'agent_control') return fail('Unknown tool', 'ERR_NOT_FOUND');
+  const { action } = params;
+  switch (action) {
+    case 'list_agents': return ok({ agents: agentRegistry.list(params.filter) });
+    case 'describe_agent': { const a = agents[params.id]; return a ? ok(a) : fail('Agent not found', 'ERR_NOT_FOUND'); }
+    default: return fail('Unknown action', 'ERR_BAD_REQUEST');
+  }
+});
+
+async function main() {
+  if (ENABLE_STREAMING) { streamHub = new StreamHub(STREAM_HOST, STREAM_PORT, STREAM_TOKEN, MAX_SUBS_PER_REQUEST); await streamHub.start(); logger.info({ host: STREAM_HOST, port: STREAM_PORT }, 'StreamHub started'); }
+  const metricsServer = http.createServer(async (req, res) => { if (req.url === '/metrics') { res.setHeader('Content-Type', register.contentType); res.end(await register.metrics()); } else { res.statusCode = 404; res.end(); } });
+  metricsServer.listen(9090, () => { logger.info('Metrics server listening on :9090'); });
+  await initializeZeroClick(server, agentRegistry);
+  const transport = new StdioServerTransport(); await server.connect(transport); logger.info('A2A MCP server started');
+}
+
+main().catch((err) => { logger.fatal(err, 'Fatal error'); process.exit(1); });
